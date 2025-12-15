@@ -5,8 +5,11 @@ const userSchema = new mongoose.Schema(
   {
     email: {
       type: String,
-      required: true,
+      required: false,
       unique: true,
+      sparse: true,
+      lowercase: true,
+      trim: true,
     },
     userName: {
       type: String,
@@ -20,6 +23,12 @@ const userSchema = new mongoose.Schema(
     profileImage: {
       type: String,
     },
+    panCardNumber: {
+      type: String,
+      required: false,
+      unique: true,
+      sparse: true,
+    },
     address: {
       type: String,
       required: true,
@@ -32,7 +41,21 @@ const userSchema = new mongoose.Schema(
     mobileNo: {
       type: String,
       required: true,
-      // match: [/^\d{10}$/, "Please provide a valid 10-digit mobile number"],
+      unique: true,
+      // stored in E.164 format: +911234567890
+    },
+    roleId: {
+      type: Number,
+      enum: [0, 1, 2], // 0 - admin, 1 - lender, 2 - borrower
+      required: true,
+      default: 2,
+    },
+    firebaseUid: {
+      type: String,
+    },
+    isMobileVerified: {
+      type: Boolean,
+      default: false,
     },
     // Store multiple device tokens as an array
     deviceTokens: [
@@ -43,45 +66,54 @@ const userSchema = new mongoose.Schema(
     ],
     subscriptionId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'Subscription',
-      required: true
+      ref: "Subscription",
+      required: false,
     },
     razorpaySubscriptionId: {
-      type: String
+      type: String,
     },
     razorpayPaymentId: {
       type: String,
-      required: true
+      required: false,
     },
     razorpayOrderId: {
       type: String,
-      required: true
+      required: false,
     },
     razorpaySignature: {
       type: String,
-      required: true
+      required: false,
     },
     amount: {
       type: Number,
-      required: true
+      required: false,
     },
     status: {
       type: String,
-      enum: ['created', 'authenticated', 'active', 'pending', 'halted', 'cancelled', 'completed', 'expired'],
-      default: 'created'
+      enum: [
+        "created",
+        "authenticated",
+        "active",
+        "pending",
+        "halted",
+        "cancelled",
+        "completed",
+        "expired",
+      ],
+      default: "created",
     },
     startDate: {
       type: Date,
-      default: Date.now
+      default: Date.now,
     },
     endDate: {
       type: Date,
-      required: true
+      required: false,
     },
     paymentStatus: {
       type: String,
-      enum: ['pending', 'captured', 'failed', 'refunded'],
-      default: 'pending'
+      enum: ["pending", "captured", "failed", "refunded"],
+      default: "pending",
     },
     isActive: {
       type: Boolean,

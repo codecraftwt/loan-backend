@@ -5,12 +5,16 @@ const {
   resetPassword,
   requestPasswordReset,
   verifyOtp,
+  sendMobileOtp,
+  verifySignupOtp,
 } = require("../../controllers/Auth/AuthController");
 
 const router = express.Router();
 
 router.post("/signup", signupUser);
 router.post("/signin", signInUser);
+router.post("/send-mobile-otp", sendMobileOtp);
+router.post("/signup/verify-otp", verifySignupOtp);
 
 router.post("/forgot-password", requestPasswordReset);
 router.post("/reset-password", resetPassword);
