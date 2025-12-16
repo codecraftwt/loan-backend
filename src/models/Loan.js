@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 
-//comment
 const loanSchema = new mongoose.Schema(
   {
     name: {
