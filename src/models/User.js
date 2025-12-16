@@ -5,16 +5,15 @@ const userSchema = new mongoose.Schema(
   {
     email: {
       type: String,
-      required: false,
+      required: true,
       unique: true,
-      sparse: true,
+      sparse: false,
       lowercase: true,
       trim: true,
     },
     userName: {
       type: String,
       required: true,
-      unique: true,
     },
     password: {
       type: String,
@@ -36,6 +35,7 @@ const userSchema = new mongoose.Schema(
     aadharCardNo: {
       type: String,
       required: true,
+      unique: true,
       // match: [/^\d{12}$/, "Please provide a valid 12-digit Aadhar number"],
     },
     mobileNo: {
