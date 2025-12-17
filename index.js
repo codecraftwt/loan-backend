@@ -4,8 +4,10 @@ const connectDB = require("./src/config/db");
 const cors = require("cors");
 const AuthRoutes = require("./src/routes/Auth/auth");
 const LoanRoutes = require("./src/routes/Auth/Loan");
-const UserRoutes = require("./src/routes/userRoutes")
-const SubscriptionRoutes = require("./src/routes/subscriptionRoutes")
+const UserRoutes = require("./src/routes/userRoutes");
+const SubscriptionRoutes = require("./src/routes/subscriptionRoutes");
+const BorrowerRoutes = require("./src/routes/Borrower/borrowerRoutes");
+const LenderLoanRoutes = require("./src/routes/Lender/lenderLoanRoutes");
 
 const app = express();
 
@@ -17,9 +19,11 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api/auth", AuthRoutes);
-app.use("/api/loan", LoanRoutes);
+app.use("/api/loan", LoanRoutes); // Keep for backward compatibility
 app.use("/api/user", UserRoutes);
 app.use("/api/subscription", SubscriptionRoutes);
+app.use("/api/borrower", BorrowerRoutes);
+app.use("/api/lender/loans", LenderLoanRoutes);
 
 app.get("/", (req, res) => {
   res.send("Loan Management API is running..");
