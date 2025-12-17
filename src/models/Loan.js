@@ -35,13 +35,25 @@ const loanSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
+    loanGivenDate: {
+      type: Date,
+      required: [true, "Loan given date is required"],
+    },
     loanEndDate: {
       type: Date,
+      required: [true, "Loan end date (due date) is required"],
       validate: {
-        validator: (v) => v > Date.now(),
-        message:
-          "Loan end date is already passed, request lender to extend the loan",
+        validator: function(v) {
+          // Allow same day but ensure it's not in the past
+          return v >= new Date(new Date().setHours(0,0,0,0));
+        },
+        message: "Loan end date cannot be in the past",
       },
+    },
+    loanMode: {
+      type: String,
+      enum: ["cash", "online"],
+      required: [true, "Loan mode is required"],
     },
     agreement: {
       type: String,
@@ -53,6 +65,11 @@ const loanSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Lender ID is required"],
+    },
+    borrowerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: false,
     },
     purpose: {
       type: String,
@@ -67,6 +84,18 @@ const loanSchema = new mongoose.Schema(
       type: String,
       enum: ["pending", "accepted", "rejected"],
       default: "pending",
+    },
+    otp: {
+      type: String,
+      default: null,
+    },
+    otpExpiry: {
+      type: Date,
+      default: null,
+    },
+    loanConfirmed: {
+      type: Boolean,
+      default: false,
     },
     profileImage: {
       type: String,

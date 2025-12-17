@@ -6,7 +6,7 @@ async function sendLoanStatusNotification(userId, loanUser, loanStatus) {
     // Find the user by userId to get the device tokens
     const user = await User.findById(userId);
     if (!user || !user.deviceTokens || user.deviceTokens.length === 0) {
-      throw new Error("User or device tokens not found");
+      return;
     }
 
     // Prepare the notification message
@@ -47,7 +47,7 @@ async function sendLoanUpdateNotification(aadhaarNumber, loan) {
     const user = await User.findOne({ aadharCardNo: aadhaarNumber });
 
     if (!user || !user.deviceTokens || user.deviceTokens.length === 0) {
-      throw new Error("User or device tokens not found");
+      return;
     }
 
     const notificationId = `${

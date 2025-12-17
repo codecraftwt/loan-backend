@@ -138,6 +138,13 @@ const updateLoanAcceptanceStatus = async (req, res) => {
       return res.status(404).json({ message: "Loan not found" });
     }
 
+    // If loan is already confirmed via OTP, borrower acceptance is already set to "accepted"
+    if (loan.loanConfirmed && loan.borrowerAcceptanceStatus === "accepted") {
+      return res.status(400).json({
+        message: "Loan is already confirmed and accepted via OTP verification",
+      });
+    }
+
     // Check if the loan is already in the same status
     if (loan.borrowerAcceptanceStatus === status) {
       return res.status(400).json({

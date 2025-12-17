@@ -4,16 +4,18 @@ const {
   updateLoanAcceptanceStatus,
 } = require("../../controllers/Borrower/borrowerLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
+const checkBorrower = require("../../middlewares/checkBorrower");
 
 const router = express.Router();
 
 // Get loans by Aadhaar (borrower views their loans)
-router.get("/get-loan-by-aadhar", authenticateUser, getLoanByAadhaar);
+router.get("/by-aadhar", authenticateUser, checkBorrower, getLoanByAadhaar);
 
 // Update loan acceptance status (borrower accepts/rejects)
 router.patch(
-  "/update-loan-acceptance-status/:loanId",
+  "/acceptance/:loanId",
   authenticateUser,
+  checkBorrower,
   updateLoanAcceptanceStatus
 );
 

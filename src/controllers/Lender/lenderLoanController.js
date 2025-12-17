@@ -5,27 +5,47 @@ const {
   sendLoanUpdateNotification,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
-const Subscription = require("../../models/Subscription");
-const { canUserCreateLoan } = require("../../services/subscriptionService");
+// Subscription related code commented out
+// const Subscription = require("../../models/Subscription");
+// const { canUserCreateLoan } = require("../../services/subscriptionService");
 const { generateLoanAgreement } = require("../../services/agreementService");
 
-// Lender creates a loan
-const AddLoan = async (req, res) => {
+const createLoan = async (req, res) => {
   try {
     const lenderId = req.user.id;
     const LoanData = req.body;
 
-    // Check if user has active subscription
-    const { canCreate, message } = await canUserCreateLoan(lenderId);
+    // Validate required fields
+    const requiredFields = ['name', 'aadharCardNo', 'mobileNumber', 'address', 'amount', 'purpose', 'loanGivenDate', 'loanEndDate', 'loanMode'];
+    const missingFields = requiredFields.filter(field => !LoanData[field]);
 
-    if (!canCreate) {
-      return res.status(403).json({
-        message: message
+    if (missingFields.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields",
+        missingFields,
       });
     }
 
-    // First, find the lender (current user) to get their subscription status
-    const lender = await User.findById(lenderId).select('hasActiveSubscription subscriptionPlan subscriptionExpiry');
+    // Validate loanMode
+    if (!['cash', 'online'].includes(LoanData.loanMode)) {
+      return res.status(400).json({
+        success: false,
+        message: "loanMode must be either 'cash' or 'online'",
+      });
+    }
+
+    // Subscription related code commented out
+    // // Check if user has active subscription
+    // const { canCreate, message } = await canUserCreateLoan(lenderId);
+    // if (!canCreate) {
+    //   return res.status(403).json({
+    //     message: message
+    //   });
+    // }
+
+    // First, find the lender (current user)
+    const lender = await User.findById(lenderId);
 
     if (!lender) {
       return res.status(404).json({
@@ -34,56 +54,57 @@ const AddLoan = async (req, res) => {
       });
     }
 
-    // Check subscription - Middleware will handle this, but double-check
-    if (!lender.hasActiveSubscription) {
-      return res.status(403).json({
-        success: false,
-        message: "Active subscription is required to create loans",
-        code: "SUBSCRIPTION_REQUIRED",
-        redirectTo: "/subscription/plans"
-      });
-    }
+    // Subscription related code commented out
+    // // Check subscription - Middleware will handle this, but double-check
+    // if (!lender.hasActiveSubscription) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Active subscription is required to create loans",
+    //     code: "SUBSCRIPTION_REQUIRED",
+    //     redirectTo: "/subscription/plans"
+    //   });
+    // }
 
-    // Check subscription expiry
-    if (lender.subscriptionExpiry && new Date() > lender.subscriptionExpiry) {
-      return res.status(403).json({
-        success: false,
-        message: "Your subscription has expired. Please renew to create loans.",
-        code: "SUBSCRIPTION_EXPIRED"
-      });
-    }
+    // // Check subscription expiry
+    // if (lender.subscriptionExpiry && new Date() > lender.subscriptionExpiry) {
+    //   return res.status(403).json({
+    //     success: false,
+    //     message: "Your subscription has expired. Please renew to create loans.",
+    //     code: "SUBSCRIPTION_EXPIRED"
+    //   });
+    // }
 
-    // Get active subscription to check loan limit
-    const activeSubscription = await Subscription.findOne({
-      user: lenderId,
-      status: 'active'
-    });
+    // // Get active subscription to check loan limit
+    // const activeSubscription = await Subscription.findOne({
+    //   user: lenderId,
+    //   status: 'active'
+    // });
 
-    if (activeSubscription) {
-      // Check current loan count
-      const currentLoanCount = await Loan.countDocuments({
-        lenderId: lenderId,
-        status: 'pending'
-      });
+    // if (activeSubscription) {
+    //   // Check current loan count
+    //   const currentLoanCount = await Loan.countDocuments({
+    //     lenderId: lenderId,
+    //     status: 'pending'
+    //   });
 
-      if (currentLoanCount >= activeSubscription.features.maxLoans) {
-        return res.status(403).json({
-          success: false,
-          message: `Loan limit reached. Your ${lender.subscriptionPlan} plan allows maximum ${activeSubscription.features.maxLoans} active loans.`,
-          code: "LOAN_LIMIT_EXCEEDED"
-        });
-      }
+    //   if (currentLoanCount >= activeSubscription.features.maxLoans) {
+    //     return res.status(403).json({
+    //       success: false,
+    //       message: `Loan limit reached. Your ${lender.subscriptionPlan} plan allows maximum ${activeSubscription.features.maxLoans} active loans.`,
+    //       code: "LOAN_LIMIT_EXCEEDED"
+    //     });
+    //   }
 
-      // Check loan amount limit
-      if (activeSubscription.features.maxLoanAmount &&
-        LoanData.amount > activeSubscription.features.maxLoanAmount) {
-        return res.status(403).json({
-          success: false,
-          message: `Loan amount exceeds your plan limit of ₹${activeSubscription.features.maxLoanAmount}`,
-          code: "LOAN_AMOUNT_EXCEEDED"
-        });
-      }
-    }
+    //   // Check loan amount limit
+    //   if (activeSubscription.features.maxLoanAmount &&
+    //     LoanData.amount > activeSubscription.features.maxLoanAmount) {
+    //     return res.status(403).json({
+    //       success: false,
+    //       message: `Loan amount exceeds your plan limit of ₹${activeSubscription.features.maxLoanAmount}`,
+    //       code: "LOAN_AMOUNT_EXCEEDED"
+    //     });
+    //   }
+    // }
 
     // Check if the lender is trying to give loan to themselves
     if (lender.aadharCardNo === LoanData.aadharCardNo) {
@@ -92,35 +113,67 @@ const AddLoan = async (req, res) => {
       });
     }
 
-    // Find the borrower by Aadhaar number
+    // Find the borrower by Aadhaar number and verify they are a borrower
     const borrower = await User.findOne({
       aadharCardNo: LoanData.aadharCardNo,
+      roleId: 2,
     });
 
     if (!borrower) {
       return res.status(404).json({
-        message: "User with the provided Aadhar number does not exist",
+        success: false,
+        message: "Borrower with the provided Aadhar number does not exist or is not a borrower",
       });
     }
 
-    const createLoan = new Loan({
-      ...LoanData,
-      lenderId,
+    // Verify loan belongs to the authenticated lender
+    // (This check is implicit since lenderId comes from req.user.id)
+
+    // Generate OTP (static for now - 1234)
+    const otp = "1234";
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+    // Create loan with OTP (not confirmed yet)
+    const newLoan = new Loan({
+      name: LoanData.name,
       aadhaarNumber: LoanData.aadharCardNo,
+      mobileNumber: LoanData.mobileNumber,
+      address: LoanData.address,
+      amount: LoanData.amount,
+      purpose: LoanData.purpose,
+      loanGivenDate: new Date(LoanData.loanGivenDate),
+      loanEndDate: new Date(LoanData.loanEndDate),
+      loanMode: LoanData.loanMode,
+      lenderId,
       borrowerId: borrower._id,
+      otp: otp,
+      otpExpiry: otpExpiry,
+      loanConfirmed: false, // Will be true after OTP verification
+      status: "pending", // Status remains "pending" until OTP is verified and beyond
+      borrowerAcceptanceStatus: "pending", // For borrower to accept/reject loan
     });
 
-    const agreementText = generateLoanAgreement(createLoan);
-    createLoan.agreement = agreementText;
+    const agreementText = generateLoanAgreement(newLoan);
+    newLoan.agreement = agreementText;
 
-    await createLoan.save();
+    await newLoan.save();
 
-    await sendLoanUpdateNotification(LoanData.aadharCardNo, LoanData);
+    // Send notification (non-blocking - won't throw error if no device tokens)
+    sendLoanUpdateNotification(LoanData.aadharCardNo, LoanData).catch(err => {
+    });
+
+    // Populate lender details for response
+    const populatedLoan = await Loan.findById(newLoan._id)
+      .populate('lenderId', 'userName email mobileNo profileImage');
 
     return res.status(201).json({
       success: true,
-      message: "Loan created successfully",
-      data: createLoan,
+      message: "Loan created successfully. OTP sent to borrower's mobile number.",
+      data: {
+        ...populatedLoan.toObject(),
+        otp: otp, // Return OTP in response for testing (remove in production)
+        otpMessage: "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
+      },
     });
   } catch (error) {
     if (error.name === "ValidationError") {
@@ -218,27 +271,87 @@ const GetLoanDetails = async (req, res) => {
   }
 };
 
-// Update loan details (lender)
-const updateLoanDetails = async (req, res) => {
+const editLoan = async (req, res) => {
   try {
     const loanId = req.params.id;
+    const lenderId = req.user.id;
+
+    // Find loan and verify it belongs to the lender
     const loan = await Loan.findById(loanId);
 
     if (!loan) {
-      return res.status(404).json({ message: "Loan data not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
     }
 
-    const updatedData = {
-      ...req.body,
-      borrowerAcceptanceStatus: "pending",
-    };
+    // Verify loan belongs to the authenticated lender
+    if (loan.lenderId.toString() !== lenderId) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only edit loans that you created",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Don't allow editing if loan is already confirmed and accepted by borrower
+    if (loan.loanConfirmed && loan.borrowerAcceptanceStatus === 'accepted') {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot edit loan that has been confirmed and accepted by borrower",
+        code: "LOAN_ACCEPTED",
+      });
+    }
+
+    // Prepare update data (exclude fields that shouldn't be changed)
+    const allowedFields = ['name', 'mobileNumber', 'address', 'amount', 'purpose', 'loanGivenDate', 'loanEndDate', 'loanMode'];
+    const updatedData = {};
+    
+    allowedFields.forEach(field => {
+      if (req.body[field] !== undefined) {
+        if (field === 'loanGivenDate' || field === 'loanEndDate') {
+          updatedData[field] = new Date(req.body[field]);
+        } else {
+          updatedData[field] = req.body[field];
+        }
+      }
+    });
+
+    // Validate loanMode if provided
+    if (updatedData.loanMode && !['cash', 'online'].includes(updatedData.loanMode)) {
+      return res.status(400).json({
+        success: false,
+        message: "loanMode must be either 'cash' or 'online'",
+      });
+    }
+
+    // Reset borrower acceptance status and loan confirmation when loan is edited
+    updatedData.borrowerAcceptanceStatus = "pending";
+    updatedData.loanConfirmed = false; // Reset confirmation when loan is edited
+    
+    // Generate new OTP if loan is being edited
+    updatedData.otp = "1234";
+    updatedData.otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
     const loanUpdateData = await Loan.findByIdAndUpdate(loanId, updatedData, {
       new: true,
-    });
+      runValidators: true,
+    })
+      .populate('lenderId', 'userName email mobileNo profileImage');
 
     if (!loanUpdateData) {
-      return res.status(404).json({ message: "Loan data not found" });
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    // Regenerate agreement if loan details changed
+    if (Object.keys(updatedData).length > 1) {
+      const agreementText = generateLoanAgreement(loanUpdateData);
+      loanUpdateData.agreement = agreementText;
+      await loanUpdateData.save();
     }
 
     await sendLoanUpdateNotification(
@@ -247,11 +360,25 @@ const updateLoanDetails = async (req, res) => {
     );
 
     return res.status(200).json({
+      success: true,
       message: "Loan updated successfully",
       data: loanUpdateData,
     });
   } catch (error) {
+    if (error.name === "ValidationError") {
+      const errorMessages = Object.values(error.errors).map(
+        (err) => err.message
+      );
+      return res.status(400).json({
+        success: false,
+        message: "Validation error",
+        errors: errorMessages,
+      });
+    }
+
+    console.error("Error updating loan:", error);
     return res.status(500).json({
+      success: false,
       message: "Server Error",
       error: error.message,
     });
@@ -518,12 +645,178 @@ const getRecentActivities = async (req, res) => {
     });
   }
 };
+const verifyOTPAndConfirmLoan = async (req, res) => {
+  try {
+    const { loanId, otp } = req.body;
+    const lenderId = req.user.id;
+
+    // Validate required fields
+    if (!loanId || !otp) {
+      return res.status(400).json({
+        success: false,
+        message: "loanId and otp are required",
+      });
+    }
+
+    // Find the loan
+    const loan = await Loan.findById(loanId);
+
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    // Verify loan belongs to the lender
+    if (loan.lenderId.toString() !== lenderId) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only confirm loans that you created",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Check if loan is already confirmed
+    if (loan.loanConfirmed) {
+      return res.status(400).json({
+        success: false,
+        message: "Loan is already confirmed",
+      });
+    }
+
+    // Check if OTP is expired
+    if (loan.otpExpiry && new Date() > loan.otpExpiry) {
+      return res.status(400).json({
+        success: false,
+        message: "OTP has expired. Please create a new loan.",
+        code: "OTP_EXPIRED",
+      });
+    }
+
+    // Verify OTP (static: 1234)
+    if (loan.otp !== otp) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP",
+        code: "INVALID_OTP",
+      });
+    }
+
+    // OTP is valid, confirm the loan and mark borrower acceptance as accepted
+    loan.loanConfirmed = true; // Loan is now confirmed after OTP verification
+    loan.borrowerAcceptanceStatus = "accepted"; // Borrower accepts loan when OTP is verified
+    loan.status = "pending"; // Status remains "pending" (for payment tracking)
+    await loan.save();
+
+    // Send notification to borrower (non-blocking - won't throw error if no device tokens)
+    sendLoanUpdateNotification(loan.aadhaarNumber, loan).catch(err => {
+      console.log("Notification skipped:", err.message);
+    });
+
+    // Populate loan details for response
+    const confirmedLoan = await Loan.findById(loan._id)
+      .populate('lenderId', 'userName email mobileNo profileImage')
+      .populate({
+        path: 'borrowerId',
+        select: 'userName email mobileNo aadharCardNo',
+        strictPopulate: false // Allow populate even if borrowerId is null
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: "Loan confirmed successfully. Borrower has accepted the loan.",
+      data: confirmedLoan,
+    });
+  } catch (error) {
+    console.error("Error verifying OTP:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Resend OTP for Loan Confirmation
+ */
+const resendOTP = async (req, res) => {
+  try {
+    const { loanId } = req.body;
+    const lenderId = req.user.id;
+
+    if (!loanId) {
+      return res.status(400).json({
+        success: false,
+        message: "loanId is required",
+      });
+    }
+
+    const loan = await Loan.findById(loanId);
+
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    // Verify loan belongs to the lender
+    if (loan.lenderId.toString() !== lenderId) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only resend OTP for loans that you created",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Check if loan is already confirmed
+    if (loan.loanConfirmed) {
+      return res.status(400).json({
+        success: false,
+        message: "Loan is already confirmed",
+      });
+    }
+
+    // Generate new OTP (static: 1234)
+    const otp = "1234";
+    const otpExpiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+
+    loan.otp = otp;
+    loan.otpExpiry = otpExpiry;
+    loan.loanConfirmed = false; // Reset confirmation when OTP is resent
+    await loan.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "OTP resent successfully to borrower's mobile number",
+      data: {
+        loanId: loan._id,
+        otp: otp, // Return OTP in response for testing (remove in production)
+        otpExpiry: otpExpiry,
+        otpMessage: "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
+      },
+    });
+  } catch (error) {
+    console.error("Error resending OTP:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
 
 module.exports = {
-  AddLoan,
+  createLoan,
+  AddLoan: createLoan, // Keep for backward compatibility
+  verifyOTPAndConfirmLoan,
+  resendOTP,
   getLoansByLender,
   GetLoanDetails,
-  updateLoanDetails,
+  editLoan,
+  updateLoanDetails: editLoan, // Keep for backward compatibility
   updateLoanStatus,
   deleteLoanDetails,
   getLoanStats,
