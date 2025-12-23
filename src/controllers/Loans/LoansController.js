@@ -781,6 +781,71 @@ const getRecentActivities = async (req, res) => {
   }
 };
 
+// Check and update overdue loans (called by cron job)
+const checkAndUpdateOverdueLoans = async () => {
+  try {
+    const currentDate = new Date();
+    console.log(`Checking for overdue loans as of ${currentDate.toISOString()}`);
+
+    // Find loans that are past due date and have remaining balance
+    const overdueLoans = await Loan.find({
+      loanEndDate: { $lt: currentDate },
+      remainingAmount: { $gt: 0 },
+      paymentStatus: { $ne: "paid" }, // Not already fully paid
+      loanConfirmed: true, // Only confirmed loans
+      borrowerAcceptanceStatus: "accepted" // Only accepted loans
+    });
+
+    console.log(`Found ${overdueLoans.length} potentially overdue loans`);
+
+    let updatedCount = 0;
+
+    for (const loan of overdueLoans) {
+      try {
+        // Calculate overdue details
+        const overdueDays = Math.floor((currentDate - loan.loanEndDate) / (1000 * 60 * 60 * 24));
+
+        // Update loan status and overdue details
+        loan.paymentStatus = "overdue";
+        loan.overdueDetails.isOverdue = true;
+        loan.overdueDetails.overdueAmount = loan.remainingAmount;
+        loan.overdueDetails.overdueDays = overdueDays;
+        loan.overdueDetails.lastOverdueCheck = currentDate;
+
+        // Send notification if not already notified or if it's been more than 7 days since last notification
+        const shouldNotify = !loan.overdueDetails.overdueNotified ||
+                            (currentDate - loan.overdueDetails.lastOverdueCheck) > (7 * 24 * 60 * 60 * 1000);
+
+        if (shouldNotify) {
+          loan.overdueDetails.overdueNotified = true;
+
+          // Send notification to borrower about overdue loan
+          try {
+            await sendLoanUpdateNotification(loan.aadhaarNumber, loan);
+            console.log(`Overdue notification sent for loan ${loan._id}`);
+          } catch (notificationError) {
+            console.error(`Failed to send overdue notification for loan ${loan._id}:`, notificationError.message);
+          }
+        }
+
+        await loan.save();
+        updatedCount++;
+        console.log(`Updated loan ${loan._id} to overdue status (${overdueDays} days overdue)`);
+
+      } catch (loanError) {
+        console.error(`Error updating loan ${loan._id}:`, loanError.message);
+      }
+    }
+
+    console.log(`Successfully updated ${updatedCount} loans to overdue status`);
+    return { success: true, updatedCount };
+
+  } catch (error) {
+    console.error('Error in checkAndUpdateOverdueLoans:', error);
+    throw error;
+  }
+};
+
 module.exports = {
   AddLoan,
   ShowAllLoan,
@@ -794,4 +859,5 @@ module.exports = {
   getLoanStats,
   updateLoanAcceptanceStatus,
   getRecentActivities,
+  checkAndUpdateOverdueLoans,
 };
