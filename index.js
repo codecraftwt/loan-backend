@@ -15,6 +15,9 @@ const app = express();
 dotenv.config();
 connectDB();
 
+// Import cron jobs
+require("./src/cron/loanCron");
+
 app.use(cors());
 
 app.use(express.json());

@@ -31,7 +31,7 @@ const getLoanByAadhaar = async (req, res) => {
     if (startDate) query.loanStartDate = { $gte: new Date(startDate) };
     if (endDate)
       query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
-    if (status) query.status = status;
+    if (status) query.paymentStatus = status;
     if (minAmount !== undefined || maxAmount !== undefined) {
       query.amount = {};
       if (minAmount !== undefined) query.amount.$gte = Number(minAmount);
@@ -92,7 +92,7 @@ const getLoanByAadhaar = async (req, res) => {
 
     const pendingLoans = filteredLoans.filter(
       (loan) =>
-        loan.status === "pending" &&
+        loan.paymentStatus === "pending" &&
         loan.borrowerAcceptanceStatus === "accepted"
     );
     const totalAmount = pendingLoans.reduce(
@@ -174,8 +174,212 @@ const updateLoanAcceptanceStatus = async (req, res) => {
   }
 };
 
+// Make loan payment (borrower)
+const makeLoanPayment = async (req, res) => {
+  try {
+    const borrowerId = req.user.id;
+    const { loanId } = req.params;
+    const {
+      paymentMode, // "cash" or "online"
+      paymentType, // "one-time" or "installment"
+      amount,
+      transactionId,
+      notes,
+      installmentNumber, // for installment payments
+    } = req.body;
+
+    // Validate required fields
+    if (!paymentMode || !paymentType || !amount) {
+      return res.status(400).json({
+        message: "Payment mode, payment type, and amount are required",
+      });
+    }
+
+    // Validate payment mode and type
+    if (!["cash", "online"].includes(paymentMode)) {
+      return res.status(400).json({
+        message: "Invalid payment mode. Must be 'cash' or 'online'",
+      });
+    }
+
+    if (!["one-time", "installment"].includes(paymentType)) {
+      return res.status(400).json({
+        message: "Invalid payment type. Must be 'one-time' or 'installment'",
+      });
+    }
+
+    // Find the loan
+    const loan = await Loan.findById(loanId);
+    if (!loan) {
+      return res.status(404).json({ message: "Loan not found" });
+    }
+
+    // Verify borrower owns this loan
+    const borrower = await User.findById(borrowerId);
+    if (!borrower || loan.aadhaarNumber !== borrower.aadharCardNo) {
+      return res.status(403).json({
+        message: "You can only make payments for your own loans",
+      });
+    }
+
+    // Check if loan is active
+    if (loan.paymentStatus === "paid") {
+      return res.status(400).json({
+        message: "This loan is already fully paid",
+      });
+    }
+
+    // Validate payment amount
+    if (amount <= 0) {
+      return res.status(400).json({
+        message: "Payment amount must be greater than 0",
+      });
+    }
+
+    let paymentData = {
+      amount,
+      paymentMode,
+      paymentType,
+      transactionId: transactionId || null,
+      notes: notes || null,
+      paymentDate: new Date(),
+    };
+
+    // Handle payment proof upload if provided
+    if (req.file) {
+      paymentData.paymentProof = req.file.path;
+    }
+
+    // Calculate new totals
+    const newTotalPaid = loan.totalPaid + amount;
+    const newRemainingAmount = loan.amount - newTotalPaid;
+
+    // Handle different payment types
+    if (paymentType === "one-time") {
+      // One-time payment
+      if (amount >= loan.remainingAmount) {
+        // Full payment
+        loan.paymentStatus = "paid";
+        loan.totalPaid = loan.amount;
+        loan.remainingAmount = 0;
+        paymentData.amount = loan.remainingAmount; // Adjust to exact remaining amount
+      } else {
+        // Partial payment (but marked as one-time, so status stays part paid)
+        loan.paymentStatus = "part paid";
+        loan.totalPaid = newTotalPaid;
+        loan.remainingAmount = newRemainingAmount;
+      }
+
+      loan.paymentType = "one-time";
+      loan.paymentMode = paymentMode;
+
+    } else if (paymentType === "installment") {
+      // Installment payment
+      loan.paymentStatus = "part paid";
+      loan.totalPaid = newTotalPaid;
+      loan.remainingAmount = newRemainingAmount;
+      loan.paymentType = "installment";
+      loan.paymentMode = paymentMode;
+
+      // Update installment tracking
+      loan.installmentPlan.paidInstallments += 1;
+
+      // Calculate next due date based on frequency
+      if (loan.installmentPlan.installmentFrequency === "monthly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+      } else if (loan.installmentPlan.installmentFrequency === "weekly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+      } else if (loan.installmentPlan.installmentFrequency === "quarterly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000); // 90 days
+      }
+    }
+
+    // Check for overdue status
+    const currentDate = new Date();
+    if (currentDate > loan.loanEndDate && loan.paymentStatus !== "paid") {
+      loan.paymentStatus = "overdue";
+      loan.overdueDetails.isOverdue = true;
+      loan.overdueDetails.overdueAmount = loan.remainingAmount;
+      loan.overdueDetails.overdueDays = Math.floor(
+        (currentDate - loan.loanEndDate) / (1000 * 60 * 60 * 24)
+      );
+    }
+
+    // Add payment to history
+    loan.paymentHistory.push(paymentData);
+
+    await loan.save();
+
+    // Send notification to lender
+    await sendLoanUpdateNotification(loan.aadhaarNumber, loan);
+
+    return res.status(200).json({
+      message: "Payment submitted successfully. Awaiting lender confirmation.",
+      data: {
+        loanId: loan._id,
+        paymentAmount: amount,
+        totalPaid: loan.totalPaid,
+        remainingAmount: loan.remainingAmount,
+        paymentStatus: loan.paymentStatus,
+        paymentHistory: loan.paymentHistory[loan.paymentHistory.length - 1],
+      },
+    });
+
+  } catch (error) {
+    console.error("Error making loan payment:", error);
+    return res.status(500).json({
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+// Get payment history for a loan (borrower)
+const getPaymentHistory = async (req, res) => {
+  try {
+    const borrowerId = req.user.id;
+    const { loanId } = req.params;
+
+    // Find the loan
+    const loan = await Loan.findById(loanId);
+    if (!loan) {
+      return res.status(404).json({ message: "Loan not found" });
+    }
+
+    // Verify borrower owns this loan
+    const borrower = await User.findById(borrowerId);
+    if (!borrower || loan.aadhaarNumber !== borrower.aadharCardNo) {
+      return res.status(403).json({
+        message: "You can only view payment history for your own loans",
+      });
+    }
+
+    return res.status(200).json({
+      message: "Payment history retrieved successfully",
+      data: {
+        loanId: loan._id,
+        totalAmount: loan.amount,
+        totalPaid: loan.totalPaid,
+        remainingAmount: loan.remainingAmount,
+        paymentStatus: loan.paymentStatus,
+        paymentHistory: loan.paymentHistory,
+        overdueDetails: loan.overdueDetails,
+      },
+    });
+
+  } catch (error) {
+    console.error("Error retrieving payment history:", error);
+    return res.status(500).json({
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getLoanByAadhaar,
   updateLoanAcceptanceStatus,
+  makeLoanPayment,
+  getPaymentHistory,
 };
 

@@ -109,6 +109,7 @@ const AddLoan = async (req, res) => {
       lenderId,
       aadhaarNumber: LoanData.aadharCardNo,
       borrowerId: borrower._id,
+      otpVerified: "pending",
     });
 
     const agreementText = generateLoanAgreement(createLoan, req.user);
@@ -143,7 +144,6 @@ const AddLoan = async (req, res) => {
   }
 };
 
-// ... rest of your existing code ...
 
 // const AddLoan = async (req, res) => {
 //   try {
@@ -328,14 +328,14 @@ const updateLoanStatus = async (req, res) => {
     }
 
     // Check if the loan is already in the same status
-    if (loan.status === status) {
+    if (loan.paymentStatus === status) {
       return res
         .status(400)
         .json({ message: `Loan is already marked as '${status}'` });
     }
 
     // Update the loan status
-    loan.status = status;
+    loan.paymentStatus = status;
     await loan.save();
 
     await sendLoanUpdateNotification(loan.aadhaarNumber, loan);
@@ -419,7 +419,7 @@ const getLoansByLender = async (req, res) => {
     if (startDate) query.loanStartDate = { $gte: new Date(startDate) };
     if (endDate)
       query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
-    if (status) query.status = status;
+    if (status) query.paymentStatus = status;
     if (minAmount !== undefined || maxAmount !== undefined) {
       query.amount = {};
       if (minAmount !== undefined) query.amount.$gte = minAmount;
@@ -500,7 +500,7 @@ const getLoanByAadhaar = async (req, res) => {
     if (startDate) query.loanStartDate = { $gte: new Date(startDate) };
     if (endDate)
       query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
-    if (status) query.status = status;
+    if (status) query.paymentStatus = status;
     if (minAmount !== undefined || maxAmount !== undefined) {
       query.amount = {};
       if (minAmount !== undefined) query.amount.$gte = Number(minAmount);
@@ -561,7 +561,7 @@ const getLoanByAadhaar = async (req, res) => {
 
     const pendingLoans = filteredLoans.filter(
       (loan) =>
-        loan.status === "pending" &&
+        loan.paymentStatus === "pending" &&
         loan.borrowerAcceptanceStatus === "accepted"
     );
     const totalAmount = pendingLoans.reduce(
@@ -600,10 +600,10 @@ const getLoanStats = async (req, res) => {
     const loansTaken = await Loan.find({ aadhaarNumber });
 
     const loansPending = loansTaken.filter(
-      (loan) => loan.status === "pending"
+      (loan) => loan.paymentStatus === "pending"
     ).length;
     const loansPaid = loansTaken.filter(
-      (loan) => loan.status === "paid"
+      (loan) => loan.paymentStatus === "paid"
     ).length;
 
     const loansGiven = await Loan.find({ lenderId });
@@ -669,7 +669,7 @@ const getRecentActivities = async (req, res) => {
     const loansGiven = await Loan.find({ lenderId: userId })
       .sort({ updatedAt: -1 })
       .limit(limit * 2) // Get more to filter
-      .select('name amount status borrowerAcceptanceStatus updatedAt')
+      .select('name amount paymentStatus borrowerAcceptanceStatus updatedAt')
       .lean();
 
     // 2. Get user's loans as borrower (loans taken) using aadhaarNumber
@@ -690,7 +690,7 @@ const getRecentActivities = async (req, res) => {
       let shortMessage = '';
       let message = '';
 
-      if (loan.status === 'paid') {
+      if (loan.paymentStatus === 'paid') {
         shortMessage = 'Loan Repaid';
         message = `Loan of ₹${loan.amount} given to ${loan.name} has been marked as paid`;
       } else if (loan.borrowerAcceptanceStatus === 'accepted') {
@@ -699,10 +699,10 @@ const getRecentActivities = async (req, res) => {
       } else if (loan.borrowerAcceptanceStatus === 'rejected') {
         shortMessage = 'Loan Rejected';
         message = `${loan.name} rejected your loan of ₹${loan.amount}`;
-      } else if (loan.status === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
+      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
         shortMessage = 'Loan Given';
         message = `You gave a loan of ₹${loan.amount} to ${loan.name}`;
-      } else if (loan.status === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
+      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
         shortMessage = 'Loan Active';
         message = `Loan of ₹${loan.amount} to ${loan.name} is active`;
       }
@@ -729,7 +729,7 @@ const getRecentActivities = async (req, res) => {
 
       const lenderName = loan.lenderId?.userName || 'Lender';
 
-      if (loan.status === 'paid') {
+      if (loan.paymentStatus === 'paid') {
         shortMessage = 'Loan Paid';
         message = `You paid ₹${loan.amount} to ${lenderName}`;
       } else if (loan.borrowerAcceptanceStatus === 'accepted') {
@@ -738,10 +738,10 @@ const getRecentActivities = async (req, res) => {
       } else if (loan.borrowerAcceptanceStatus === 'rejected') {
         shortMessage = 'Loan Rejected';
         message = `You rejected loan of ₹${loan.amount} from ${lenderName}`;
-      } else if (loan.status === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
+      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
         shortMessage = 'Loan Requested';
         message = `You requested a loan of ₹${loan.amount} from ${lenderName}`;
-      } else if (loan.status === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
+      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
         shortMessage = 'Loan Active';
         message = `Your loan of ₹${loan.amount} from ${lenderName} is active`;
       }

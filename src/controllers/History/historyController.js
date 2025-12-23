@@ -15,7 +15,7 @@ const getAllBorrowersHistory = async (req, res) => {
     // Add filters
     if (startDate) query.loanGivenDate = { ...query.loanGivenDate, $gte: new Date(startDate) };
     if (endDate) query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
-    if (status) query.status = status;
+    if (status) query.paymentStatus = status;
     if (minAmount !== undefined || maxAmount !== undefined) {
       query.amount = {};
       if (minAmount !== undefined) query.amount.$gte = Number(minAmount);
@@ -107,7 +107,7 @@ const getBorrowerHistoryByLenderId = async (req, res) => {
     // Add filters
     if (startDate) query.loanGivenDate = { ...query.loanGivenDate, $gte: new Date(startDate) };
     if (endDate) query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
-    if (status) query.status = status;
+    if (status) query.paymentStatus = status;
     if (minAmount !== undefined || maxAmount !== undefined) {
       query.amount = {};
       if (minAmount !== undefined) query.amount.$gte = Number(minAmount);
@@ -205,7 +205,7 @@ const getBorrowerHistoryByBorrowerId = async (req, res) => {
     // Add filters
     if (startDate) query.loanGivenDate = { ...query.loanGivenDate, $gte: new Date(startDate) };
     if (endDate) query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
-    if (status) query.status = status;
+    if (status) query.paymentStatus = status;
     if (minAmount !== undefined || maxAmount !== undefined) {
       query.amount = {};
       if (minAmount !== undefined) query.amount.$gte = Number(minAmount);
@@ -251,8 +251,8 @@ const getBorrowerHistoryByBorrowerId = async (req, res) => {
     }
 
     // Calculate summary statistics
-    const pendingLoans = loans.filter(loan => loan.status === 'pending');
-    const paidLoans = loans.filter(loan => loan.status === 'paid');
+    const pendingLoans = loans.filter(loan => loan.paymentStatus === 'pending');
+    const paidLoans = loans.filter(loan => loan.paymentStatus === 'paid');
     const totalPendingAmount = pendingLoans.reduce((sum, loan) => sum + loan.amount, 0);
     const totalPaidAmount = paidLoans.reduce((sum, loan) => sum + loan.amount, 0);
 
@@ -329,7 +329,7 @@ const getBorrowerHistoryByBorrowerAndLenderId = async (req, res) => {
     // Add filters
     if (startDate) query.loanGivenDate = { ...query.loanGivenDate, $gte: new Date(startDate) };
     if (endDate) query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
-    if (status) query.status = status;
+    if (status) query.paymentStatus = status;
     if (minAmount !== undefined || maxAmount !== undefined) {
       query.amount = {};
       if (minAmount !== undefined) query.amount.$gte = Number(minAmount);
@@ -375,8 +375,8 @@ const getBorrowerHistoryByBorrowerAndLenderId = async (req, res) => {
     }
 
     // Calculate summary statistics
-    const pendingLoans = loans.filter(loan => loan.status === 'pending');
-    const paidLoans = loans.filter(loan => loan.status === 'paid');
+    const pendingLoans = loans.filter(loan => loan.paymentStatus === 'pending');
+    const paidLoans = loans.filter(loan => loan.paymentStatus === 'paid');
     const totalPendingAmount = pendingLoans.reduce((sum, loan) => sum + loan.amount, 0);
     const totalPaidAmount = paidLoans.reduce((sum, loan) => sum + loan.amount, 0);
 
@@ -446,7 +446,7 @@ const getAllLoansByLenderId = async (req, res) => {
     // Add filters
     if (startDate) query.loanGivenDate = { ...query.loanGivenDate, $gte: new Date(startDate) };
     if (endDate) query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
-    if (status) query.status = status;
+    if (status) query.paymentStatus = status;
     if (minAmount !== undefined || maxAmount !== undefined) {
       query.amount = {};
       if (minAmount !== undefined) query.amount.$gte = Number(minAmount);
@@ -492,8 +492,8 @@ const getAllLoansByLenderId = async (req, res) => {
     }
 
     // Calculate summary statistics
-    const pendingLoans = loans.filter(loan => loan.status === 'pending');
-    const paidLoans = loans.filter(loan => loan.status === 'paid');
+    const pendingLoans = loans.filter(loan => loan.paymentStatus === 'pending');
+    const paidLoans = loans.filter(loan => loan.paymentStatus === 'paid');
     const totalPendingAmount = pendingLoans.reduce((sum, loan) => sum + loan.amount, 0);
     const totalPaidAmount = paidLoans.reduce((sum, loan) => sum + loan.amount, 0);
     const totalLoanAmount = loans.reduce((sum, loan) => sum + loan.amount, 0);
@@ -535,5 +535,6 @@ module.exports = {
   getBorrowerHistoryByBorrowerAndLenderId,
   getAllLoansByLenderId,
 };
+
 
 

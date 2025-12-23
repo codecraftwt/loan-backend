@@ -1,12 +1,42 @@
 # Loan Management API Documentation
-
 ## Base URL
 ```
 http://localhost:5001/api
 ```
-
 ## Authentication
 All endpoints require a Bearer token in the Authorization header.
+
+## 🎯 Frontend Implementation Guide
+
+### **What Your Frontend Team Needs to Build:**
+
+#### **Borrower App Features:**
+1. **Payment Screen**: Form to select payment mode (cash/online) and type (one-time/installment)
+2. **File Upload**: Allow borrowers to upload payment proof (receipts, bank statements)
+3. **Payment History**: Display all payments with their confirmation status
+4. **Loan Status Dashboard**: Show current balance, payment status, overdue alerts
+
+#### **Lender App Features:**
+1. **Pending Payments Dashboard**: List all payments waiting for approval
+2. **Payment Review Screen**: View payment details and proof documents
+3. **Approve/Reject Actions**: Buttons to confirm or reject payments with notes
+4. **Loan Management**: View loan status, payment history, overdue tracking
+
+#### **Key UI Components Needed:**
+- File upload component (images/PDFs)
+- Payment form with validation
+- Status badges (pending/confirmed/rejected)
+- Notification system for payment updates
+- Pagination for payment lists
+
+#### **Important Notes for Frontend:**
+- Use `multipart/form-data` for payment submissions (file uploads)
+- Handle file size limits (5MB max)
+- Show loading states during payment submission
+- Implement proper error handling for all API responses
+- Use pagination for lender's pending payments list
+
+---
 
 **Header Format:**
 ```
@@ -485,9 +515,9 @@ Content-Type: application/json
 - **OTP Verification**: When OTP is verified, `loanConfirmed` becomes `true` and `borrowerAcceptanceStatus` automatically becomes `"accepted"`
 
 ### Loan Status Flow
-1. **Created** → `loanConfirmed: false`, `status: "pending"`, `borrowerAcceptanceStatus: "pending"`
-2. **OTP Verified** → `loanConfirmed: true`, `status: "pending"`, `borrowerAcceptanceStatus: "accepted"` (automatic)
-3. **Lender Marks Paid** → `status: "paid"`
+1. **Created** → `loanConfirmed: false`, `paymentStatus: "pending"`, `borrowerAcceptanceStatus: "pending"`
+2. **OTP Verified** → `loanConfirmed: true`, `paymentStatus: "pending"`, `borrowerAcceptanceStatus: "accepted"` (automatic)
+3. **Lender Marks Paid** → `paymentStatus: "paid"`
 
 ### Field Validations
 - `aadharCardNo`: Must be exactly 12 digits (numbers only)
@@ -578,8 +608,287 @@ curl -X POST "http://localhost:5001/api/lender/loans/verify-otp" \
 
 ---
 
-## 📞 Support
+## 💰 Payment System APIs
 
-For any issues or questions, please contact the development team.
+### Overview
+The payment system supports both cash and online payment modes with one-time and installment payment types. Borrowers can submit payments with optional proof uploads, and lenders can review and confirm/reject these payments.
 
+### Payment Flow
+1. **Borrower submits payment** with proof (optional for cash, recommended for both)
+2. **Lender receives notification** of pending payment
+3. **Lender reviews payment** and uploaded proof
+4. **Lender confirms or rejects** the payment
+5. **System updates loan status** and sends notifications
 
+### Payment Statuses
+- `pending`: Payment submitted, awaiting lender confirmation
+- `confirmed`: Payment verified and accepted by lender
+- `rejected`: Payment rejected by lender
+
+### Loan Payment Statuses
+- `pending`: Loan created, no payments made
+- `part paid`: Some payments made but loan not fully paid
+- `paid`: Loan fully paid
+- `overdue`: Loan past due date with outstanding balance
+
+---
+
+## Borrower Payment APIs
+
+### 1. Make Loan Payment
+**Endpoint:** `POST /api/borrower/loans/payment/:loanId`  
+**Authentication:** Required (Borrower)  
+**Content-Type:** `multipart/form-data`
+
+Submit a payment for a loan. Supports both cash and online payments with optional proof upload.
+
+#### Request Parameters
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `loanId` | string | Yes | Loan ID in URL path |
+| `paymentMode` | string | Yes | "cash" or "online" |
+| `paymentType` | string | Yes | "one-time" or "installment" |
+| `amount` | number | Yes | Payment amount |
+| `transactionId` | string | No | Transaction ID (for online payments) |
+| `notes` | string | No | Additional notes |
+| `paymentProof` | file | No | Payment proof (JPEG, JPG, PNG, PDF) |
+
+#### Example Request
+```bash
+curl -X POST "http://localhost:5001/api/borrower/loans/payment/507f1f77bcf86cd799439011" \
+  -H "Authorization: Bearer YOUR_BORROWER_TOKEN" \
+  -F "paymentMode=cash" \
+  -F "paymentType=one-time" \
+  -F "amount=5000" \
+  -F "notes=Paid via cash at lender's office" \
+  -F "paymentProof=@receipt.jpg"
+```
+#### Success Response (200)
+```json
+{
+  "message": "Payment submitted successfully. Awaiting lender confirmation.",
+  "data": {
+    "loanId": "507f1f77bcf86cd799439011",
+    "paymentAmount": 5000,
+    "totalPaid": 5000,
+    "remainingAmount": 5000,
+    "paymentStatus": "part paid",
+    "paymentHistory": {
+      "_id": "507f1f77bcf86cd799439012",
+      "amount": 5000,
+      "paymentMode": "cash",
+      "paymentType": "one-time",
+      "paymentDate": "2024-01-15T10:30:00.000Z",
+      "paymentStatus": "pending",
+      "paymentProof": "/uploads/payment-proofs/payment-proof-123456789.jpg"
+    }
+  }
+}
+```
+#### Error Responses
+- `400`: Invalid payment data or loan already paid
+- `403`: Not authorized to pay for this loan
+- `404`: Loan not found
+
+---
+
+### 2. Get Payment History
+**Endpoint:** `GET /api/borrower/loans/payment-history/:loanId`  
+**Authentication:** Required (Borrower)
+
+Get payment history and current payment status for a specific loan.
+
+#### Request Parameters
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `loanId` | string | Yes | Loan ID in URL path |
+
+#### Example Request
+```bash
+curl -X GET "http://localhost:5001/api/borrower/loans/payment-history/507f1f77bcf86cd799439011" \
+  -H "Authorization: Bearer YOUR_BORROWER_TOKEN"
+```
+
+#### Success Response (200)
+```json
+{
+  "message": "Payment history retrieved successfully",
+  "data": {
+    "loanId": "507f1f77bcf86cd799439011",
+    "totalAmount": 10000,
+    "totalPaid": 5000,
+    "remainingAmount": 5000,
+    "paymentStatus": "part paid",
+    "paymentHistory": [
+      {
+        "_id": "507f1f77bcf86cd799439012",
+        "amount": 5000,
+        "paymentMode": "cash",
+        "paymentType": "one-time",
+        "paymentDate": "2024-01-15T10:30:00.000Z",
+        "paymentStatus": "confirmed",
+        "confirmedAt": "2024-01-15T11:00:00.000Z",
+        "paymentProof": "/uploads/payment-proofs/payment-proof-123456789.jpg"
+      }
+    ],
+    "overdueDetails": {
+      "isOverdue": false,
+      "overdueAmount": 0,
+      "overdueDays": 0
+    }
+  }
+}
+```
+
+## Lender Payment APIs
+
+### 1. Confirm Payment
+**Endpoint:** `PATCH /api/lender/loans/payment/confirm/:loanId/:paymentId`  
+**Authentication:** Required (Lender)
+
+Confirm a borrower's payment after reviewing the proof.
+
+#### Request Parameters
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `loanId` | string | Yes | Loan ID in URL path |
+| `paymentId` | string | Yes | Payment ID in URL path |
+| `notes` | string | No | Confirmation notes |
+
+#### Example Request
+```bash
+curl -X PATCH "http://localhost:5001/api/lender/loans/payment/confirm/507f1f77bcf86cd799439011/507f1f77bcf86cd799439012" \
+  -H "Authorization: Bearer YOUR_LENDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "notes": "Payment confirmed. Receipt matches amount."
+  }'
+```
+
+#### Success Response (200)
+```json
+{
+  "message": "Payment confirmed successfully",
+  "data": {
+    "loanId": "507f1f77bcf86cd799439011",
+    "paymentId": "507f1f77bcf86cd799439012",
+    "confirmedAmount": 5000,
+    "totalPaid": 5000,
+    "remainingAmount": 5000,
+    "paymentStatus": "part paid"
+  }
+}
+```
+
+### 2. Reject Payment
+**Endpoint:** `PATCH /api/lender/loans/payment/reject/:loanId/:paymentId`  
+**Authentication:** Required (Lender)
+
+Reject a borrower's payment with a reason.
+
+#### Request Parameters
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `loanId` | string | Yes | Loan ID in URL path |
+| `paymentId` | string | Yes | Payment ID in URL path |
+| `reason` | string | Yes | Reason for rejection |
+
+#### Example Request
+```bash
+curl -X PATCH "http://localhost:5001/api/lender/loans/payment/reject/507f1f77bcf86cd799439011/507f1f77bcf86cd799439012" \
+  -H "Authorization: Bearer YOUR_LENDER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Receipt amount does not match claimed payment"
+  }'
+```
+
+#### Success Response (200)
+```json
+{
+  "message": "Payment rejected successfully",
+  "data": {
+    "loanId": "507f1f77bcf86cd799439011",
+    "paymentId": "507f1f77bcf86cd799439012",
+    "rejectedAmount": 5000,
+    "reason": "Receipt amount does not match claimed payment"
+  }
+}
+```
+
+---
+
+### 3. Get Pending Payments
+**Endpoint:** `GET /api/lender/loans/payments/pending`  
+**Authentication:** Required (Lender)  
+**Query Parameters:** Pagination support
+
+Get all pending payments that require lender review.
+
+#### Query Parameters
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `page` | number | No | 1 | Page number |
+| `limit` | number | No | 10 | Items per page |
+
+#### Example Request
+```bash
+curl -X GET "http://localhost:5001/api/lender/loans/payments/pending?page=1&limit=10" \
+  -H "Authorization: Bearer YOUR_LENDER_TOKEN"
+```
+
+#### Success Response (200)
+```json
+{
+  "message": "Pending payments retrieved successfully",
+  "data": [
+    {
+      "loanId": "507f1f77bcf86cd799439011",
+      "loanName": "John Doe",
+      "totalAmount": 10000,
+      "totalPaid": 0,
+      "remainingAmount": 10000,
+      "borrowerAadhaar": "123456789012",
+      "pendingPayments": [
+        {
+          "_id": "507f1f77bcf86cd799439012",
+          "amount": 5000,
+          "paymentMode": "cash",
+          "paymentType": "one-time",
+          "paymentDate": "2024-01-15T10:30:00.000Z",
+          "paymentProof": "/uploads/payment-proofs/payment-proof-123456789.jpg",
+          "notes": "Paid via cash at office"
+        }
+      ]
+    }
+  ],
+  "pagination": {
+    "currentPage": 1,
+    "totalPages": 1,
+    "totalItems": 1,
+    "itemsPerPage": 10
+  }
+}
+```
+
+## Payment Business Logic
+
+### One-time Payment
+- **Full Payment**: If amount ≥ remaining balance → Status: "paid", Remaining: 0
+- **Partial Payment**: Amount < remaining balance → Status: "part paid"
+
+### Installment Payment
+- Always sets status to "part paid"
+- Tracks paid installments vs total installments
+- Calculates next due date based on frequency
+
+### Overdue Detection
+- Automatically checks if loan end date has passed
+- Updates status to "overdue" if balance remains
+- Tracks overdue days and amount
+
+### Payment Confirmation Flow
+1. Borrower submits payment → Status: "pending"
+2. Lender reviews → Confirms/Rejects
+3. On confirmation → Updates loan totals and status
+4. On rejection → Payment marked as rejected with reason

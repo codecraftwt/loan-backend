@@ -48,7 +48,7 @@ Content-Type: application/json
 | `limit` | number | No | 10 | Number of items per page |
 | `startDate` | string (ISO date) | No | - | Filter loans from this date onwards (loanGivenDate) |
 | `endDate` | string (ISO date) | No | - | Filter loans up to this date (loanEndDate) |
-| `status` | string | No | - | Filter by loan status: "pending" or "paid" |
+| `paymentStatus` | string | No | - | Filter by loan payment status: "pending" or "paid" |
 | `minAmount` | number | No | - | Minimum loan amount filter |
 | `maxAmount` | number | No | - | Maximum loan amount filter |
 | `search` | string | No | - | Search by borrower name (case-insensitive) |
@@ -56,7 +56,7 @@ Content-Type: application/json
 ### Request Example
 
 ```bash
-GET http://localhost:5001/api/history/borrowers?page=1&limit=10&status=pending
+GET http://localhost:5001/api/history/borrowers?page=1&limit=10&paymentStatus=pending
 ```
 
 ### Success Response (200 OK)
@@ -77,7 +77,7 @@ GET http://localhost:5001/api/history/borrowers?page=1&limit=10&status=pending
       "loanGivenDate": "2024-01-15T10:30:00.000Z",
       "loanEndDate": "2024-12-31T23:59:59.000Z",
       "loanMode": "cash",
-      "status": "pending",
+      "paymentStatus": "pending",
       "borrowerAcceptanceStatus": "accepted",
       "loanConfirmed": true,
       "lenderId": {
@@ -165,7 +165,7 @@ Content-Type: application/json
 | `limit` | number | No | 10 | Number of items per page |
 | `startDate` | string (ISO date) | No | - | Filter loans from this date onwards |
 | `endDate` | string (ISO date) | No | - | Filter loans up to this date |
-| `status` | string | No | - | Filter by loan status: "pending" or "paid" |
+| `paymentStatus` | string | No | - | Filter by loan payment status: "pending" or "paid" |
 | `minAmount` | number | No | - | Minimum loan amount filter |
 | `maxAmount` | number | No | - | Maximum loan amount filter |
 | `search` | string | No | - | Search by borrower name (case-insensitive) |
@@ -173,7 +173,7 @@ Content-Type: application/json
 ### Request Example
 
 ```bash
-GET http://localhost:5001/api/history/borrowers/lender/507f1f77bcf86cd799439012?page=1&limit=10&status=pending
+GET http://localhost:5001/api/history/borrowers/lender/507f1f77bcf86cd799439012?page=1&limit=10&paymentStatus=pending
 ```
 
 ### Success Response (200 OK)
@@ -200,7 +200,7 @@ GET http://localhost:5001/api/history/borrowers/lender/507f1f77bcf86cd799439012?
       "loanGivenDate": "2024-01-15T10:30:00.000Z",
       "loanEndDate": "2024-12-31T23:59:59.000Z",
       "loanMode": "cash",
-      "status": "pending",
+      "paymentStatus": "pending",
       "borrowerAcceptanceStatus": "accepted",
       "loanConfirmed": true,
       "lenderId": {
@@ -295,7 +295,7 @@ Content-Type: application/json
 | `limit` | number | No | 10 | Number of items per page |
 | `startDate` | string (ISO date) | No | - | Filter loans from this date onwards |
 | `endDate` | string (ISO date) | No | - | Filter loans up to this date |
-| `status` | string | No | - | Filter by loan status: "pending" or "paid" |
+| `paymentStatus` | string | No | - | Filter by loan payment status: "pending" or "paid" |
 | `minAmount` | number | No | - | Minimum loan amount filter |
 | `maxAmount` | number | No | - | Maximum loan amount filter |
 | `search` | string | No | - | Search by borrower name (case-insensitive) |
@@ -338,7 +338,7 @@ GET http://localhost:5001/api/history/borrowers/borrower/507f1f77bcf86cd79943901
       "loanGivenDate": "2024-01-15T10:30:00.000Z",
       "loanEndDate": "2024-12-31T23:59:59.000Z",
       "loanMode": "cash",
-      "status": "pending",
+      "paymentStatus": "pending",
       "borrowerAcceptanceStatus": "accepted",
       "loanConfirmed": true,
       "lenderId": {
@@ -434,7 +434,7 @@ Content-Type: application/json
 | `limit` | number | No | 10 | Number of items per page |
 | `startDate` | string (ISO date) | No | - | Filter loans from this date onwards |
 | `endDate` | string (ISO date) | No | - | Filter loans up to this date |
-| `status` | string | No | - | Filter by loan status: "pending" or "paid" |
+| `paymentStatus` | string | No | - | Filter by loan payment status: "pending" or "paid" |
 | `minAmount` | number | No | - | Minimum loan amount filter |
 | `maxAmount` | number | No | - | Maximum loan amount filter |
 | `search` | string | No | - | Search by borrower name (case-insensitive) |
@@ -482,7 +482,7 @@ GET http://localhost:5001/api/history/borrowers/borrower/507f1f77bcf86cd79943901
       "loanGivenDate": "2024-01-15T10:30:00.000Z",
       "loanEndDate": "2024-12-31T23:59:59.000Z",
       "loanMode": "cash",
-      "status": "pending",
+      "paymentStatus": "pending",
       "borrowerAcceptanceStatus": "accepted",
       "loanConfirmed": true,
       "lenderId": {
@@ -585,7 +585,7 @@ Content-Type: application/json
 | `limit` | number | No | 10 | Number of items per page |
 | `startDate` | string (ISO date) | No | - | Filter loans from this date onwards |
 | `endDate` | string (ISO date) | No | - | Filter loans up to this date |
-| `status` | string | No | - | Filter by loan status: "pending" or "paid" |
+| `paymentStatus` | string | No | - | Filter by loan payment status: "pending" or "paid" |
 | `minAmount` | number | No | - | Minimum loan amount filter |
 | `maxAmount` | number | No | - | Maximum loan amount filter |
 | `search` | string | No | - | Search by borrower name (case-insensitive) |
@@ -628,7 +628,7 @@ GET http://localhost:5001/api/history/loans/lender/507f1f77bcf86cd799439012?page
       "loanGivenDate": "2024-01-15T10:30:00.000Z",
       "loanEndDate": "2024-12-31T23:59:59.000Z",
       "loanMode": "cash",
-      "status": "pending",
+      "paymentStatus": "pending",
       "borrowerAcceptanceStatus": "accepted",
       "loanConfirmed": true,
       "lenderId": {
@@ -702,7 +702,7 @@ All endpoints support the following optional query parameters for filtering:
 
 - **Pagination**: `page` (default: 1), `limit` (default: 10)
 - **Date Range**: `startDate`, `endDate` (ISO 8601 format)
-- **Status Filter**: `status` ("pending" or "paid")
+- **Payment Status Filter**: `paymentStatus` ("pending" or "paid")
 - **Amount Range**: `minAmount`, `maxAmount` (numbers)
 - **Search**: `search` (searches borrower name, case-insensitive)
 
@@ -729,7 +729,7 @@ Some endpoints also include:
 ### Loan Object Structure
 
 Each loan object in the response includes:
-- Loan details (name, amount, purpose, dates, mode, status)
+- Loan details (name, amount, purpose, dates, mode, paymentStatus)
 - `lenderId`: Populated lender object with user details
 - `borrowerId`: Populated borrower object with user details
 - Timestamps (`createdAt`, `updatedAt`)
@@ -773,7 +773,7 @@ curl -X GET "http://localhost:5001/api/history/borrowers?page=1&limit=10" \
 
 **Get Borrower History by Lender ID:**
 ```bash
-curl -X GET "http://localhost:5001/api/history/borrowers/lender/507f1f77bcf86cd799439012?page=1&limit=10&status=pending" \
+curl -X GET "http://localhost:5001/api/history/borrowers/lender/507f1f77bcf86cd799439012?page=1&limit=10&paymentStatus=pending" \
   -H "Authorization: Bearer YOUR_TOKEN"
 ```
 
@@ -897,7 +897,8 @@ For any issues or questions, please contact the development team.
 1. **Authentication**: Always include the Bearer token in the Authorization header
 2. **Error Handling**: Check the `success` field in responses and handle errors appropriately
 3. **Pagination**: Use pagination parameters (`page`, `limit`) for large datasets
-4. **Filtering**: Use query parameters to filter results (status, dates, amounts)
+4. **Filtering**: Use query parameters to filter results (paymentStatus, dates, amounts)
 5. **Summary Stats**: Endpoints #3, #4, and #5 include summary statistics for quick insights
 6. **Populated Data**: All endpoints return populated lender and borrower objects for easy display
 7. **Empty Results**: Handle 404 responses gracefully when no data is found
+

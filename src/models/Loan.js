@@ -35,25 +35,13 @@ const loanSchema = new mongoose.Schema(
       type: Date,
       default: Date.now,
     },
-    loanGivenDate: {
-      type: Date,
-      required: [true, "Loan given date is required"],
-    },
     loanEndDate: {
       type: Date,
-      required: [true, "Loan end date (due date) is required"],
       validate: {
-        validator: function(v) {
-          // Allow same day but ensure it's not in the past
-          return v >= new Date(new Date().setHours(0,0,0,0));
-        },
-        message: "Loan end date cannot be in the past",
+        validator: (v) => v > Date.now(),
+        message:
+          "Loan end date is already passed, request lender to extend the loan",
       },
-    },
-    loanMode: {
-      type: String,
-      enum: ["cash", "online"],
-      required: [true, "Loan mode is required"],
     },
     agreement: {
       type: String,
@@ -66,18 +54,13 @@ const loanSchema = new mongoose.Schema(
       ref: "User",
       required: [true, "Lender ID is required"],
     },
-    borrowerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: false,
-    },
     purpose: {
       type: String,
       required: [true, "Purpose of loan is required"],
     },
-    status: {
+    paymentStatus: {
       type: String,
-      enum: ["pending", "paid"],
+      enum: ["pending", "part paid", "paid", "overdue"],
       default: "pending",
     },
     borrowerAcceptanceStatus: {
@@ -85,17 +68,128 @@ const loanSchema = new mongoose.Schema(
       enum: ["pending", "accepted", "rejected"],
       default: "pending",
     },
-    otp: {
+    otpVerified: {
       type: String,
+      enum: ["pending", "verified"],
+      default: "pending",
+    },
+    // Payment tracking fields
+    paymentType: {
+      type: String,
+      enum: ["one-time", "installment"],
       default: null,
     },
-    otpExpiry: {
-      type: Date,
+    paymentMode: {
+      type: String,
+      enum: ["cash", "online"],
       default: null,
     },
-    loanConfirmed: {
-      type: Boolean,
-      default: false,
+    totalPaid: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    remainingAmount: {
+      type: Number,
+      default: function() {
+        return this.amount;
+      },
+    },
+    // Installment tracking
+    installmentPlan: {
+      totalInstallments: {
+        type: Number,
+        default: 1,
+      },
+      paidInstallments: {
+        type: Number,
+        default: 0,
+      },
+      installmentAmount: {
+        type: Number,
+        default: function() {
+          return this.amount;
+        },
+      },
+      nextDueDate: {
+        type: Date,
+        default: null,
+      },
+      installmentFrequency: {
+        type: String,
+        enum: ["weekly", "monthly", "quarterly"],
+        default: "monthly",
+      },
+    },
+    // Payment history
+    paymentHistory: [{
+      amount: {
+        type: Number,
+        required: true,
+      },
+      paymentMode: {
+        type: String,
+        enum: ["cash", "online"],
+        required: true,
+      },
+      paymentType: {
+        type: String,
+        enum: ["one-time", "installment"],
+        required: true,
+      },
+      paymentDate: {
+        type: Date,
+        default: Date.now,
+      },
+      transactionId: {
+        type: String,
+        default: null,
+      },
+      notes: {
+        type: String,
+        default: null,
+      },
+      paymentProof: {
+        type: String, // File path/URL for payment proof
+        default: null,
+      },
+      paymentStatus: {
+        type: String,
+        enum: ["pending", "confirmed", "rejected"],
+        default: "pending",
+      },
+      confirmedBy: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null,
+      },
+      confirmedAt: {
+        type: Date,
+        default: null,
+      },
+    }],
+    // Overdue tracking
+    overdueDetails: {
+      isOverdue: {
+        type: Boolean,
+        default: false,
+      },
+      overdueAmount: {
+        type: Number,
+        default: 0,
+      },
+      overdueDays: {
+        type: Number,
+        default: 0,
+      },
+      lastOverdueCheck: {
+        type: Date,
+        default: Date.now,
+      },
+      overdueNotified: {
+        type: Boolean,
+        default: false,
+      },
     },
     profileImage: {
       type: String,

@@ -10,6 +10,9 @@ const {
   deleteLoanDetails,
   getLoanStats,
   getRecentActivities,
+  confirmPayment,
+  rejectPayment,
+  getPendingPayments,
 } = require("../../controllers/Lender/lenderLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
@@ -45,6 +48,15 @@ router.patch("/:id", authenticateUser, checkLender, editLoan);
 
 // Update loan status (mark as paid) - only lenders
 router.patch("/status/:loanId", authenticateUser, checkLender, updateLoanStatus);
+
+// Confirm loan payment (only lenders)
+router.patch("/payment/confirm/:loanId/:paymentId", authenticateUser, checkLender, confirmPayment);
+
+// Reject loan payment (only lenders)
+router.patch("/payment/reject/:loanId/:paymentId", authenticateUser, checkLender, rejectPayment);
+
+// Get pending payments for lender review
+router.get("/payments/pending", authenticateUser, checkLender, getPendingPayments);
 
 // Delete loan (only lenders can delete their loans)
 router.delete("/:id", authenticateUser, checkLender, deleteLoanDetails);
