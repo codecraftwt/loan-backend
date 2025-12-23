@@ -68,6 +68,14 @@ const loanSchema = new mongoose.Schema(
       enum: ["pending", "accepted", "rejected"],
       default: "pending",
     },
+    otp: {
+      type: String,
+      default: null,
+    },
+    otpExpiry: {
+      type: Date,
+      default: null,
+    },
     otpVerified: {
       type: String,
       enum: ["pending", "verified"],
