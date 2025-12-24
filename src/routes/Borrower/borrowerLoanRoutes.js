@@ -4,6 +4,7 @@ const {
   updateLoanAcceptanceStatus,
   makeLoanPayment,
   getPaymentHistory,
+  getMyLoans,
 } = require("../../controllers/Borrower/borrowerLoanController");
 const multer = require("multer");
 const path = require("path");
@@ -43,6 +44,9 @@ const authenticateUser = require("../../middlewares/authenticateUser");
 const checkBorrower = require("../../middlewares/checkBorrower");
 
 const router = express.Router();
+
+// Get authenticated borrower's loans (automatically uses their borrower ID)
+router.get("/my-loans", authenticateUser, checkBorrower, getMyLoans);
 
 // Get loans by Aadhaar (borrower views their loans)
 router.get("/by-aadhar", authenticateUser, checkBorrower, getLoanByAadhaar);

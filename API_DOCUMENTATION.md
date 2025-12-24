@@ -633,6 +633,95 @@ The payment system supports both cash and online payment modes with one-time and
 
 ---
 
+## Borrower Loan APIs
+
+### 1. Get My Loans
+**Endpoint:** `GET /api/borrower/loans/my-loans`  
+**Authentication:** Required (Borrower)  
+**Query Parameters:** Pagination and filtering support
+
+Get all loans for the authenticated borrower automatically (no need to pass Aadhaar number).
+
+#### Query Parameters
+| Parameter | Type | Required | Default | Description |
+|-----------|------|----------|---------|-------------|
+| `page` | number | No | 1 | Page number |
+| `limit` | number | No | 10 | Items per page |
+| `startDate` | string | No | - | Filter loans from this date (YYYY-MM-DD) |
+| `endDate` | string | No | - | Filter loans until this date (YYYY-MM-DD) |
+| `status` | string | No | - | Filter by payment status ("pending", "part paid", "paid", "overdue") |
+| `minAmount` | number | No | - | Minimum loan amount |
+| `maxAmount` | number | No | - | Maximum loan amount |
+| `search` | string | No | - | Search by lender name, email, or phone |
+
+#### Example Request
+```bash
+curl -X GET "http://localhost:5001/api/borrower/loans/my-loans?page=1&limit=10&status=part%20paid" \
+  -H "Authorization: Bearer YOUR_BORROWER_TOKEN"
+```
+
+#### Success Response (200)
+```json
+{
+  "message": "Borrower loans retrieved successfully",
+  "data": [
+    {
+      "_id": "507f1f77bcf86cd799439011",
+      "name": "Borrower Name",
+      "amount": 5000,
+      "paymentStatus": "part paid",
+      "remainingAmount": 2500,
+      "totalPaid": 2500,
+      "loanEndDate": "2026-01-15T23:59:59.000Z",
+      "lenderId": {
+        "userName": "Lender Name",
+        "email": "lender@example.com",
+        "mobileNo": "+919999999999"
+      }
+    }
+  ],
+  "summary": {
+    "totalLoans": 3,
+    "activeLoans": 2,
+    "completedLoans": 1,
+    "overdueLoans": 0,
+    "totalAmountBorrowed": 15000,
+    "totalAmountPaid": 7500,
+    "totalAmountRemaining": 7500
+  },
+  "pagination": {
+    "currentPage": 1,
+    "totalPages": 1,
+    "totalItems": 3,
+    "itemsPerPage": 10
+  }
+}
+```
+
+---
+
+### 2. Get Loans by Aadhaar
+**Endpoint:** `GET /api/borrower/loans/by-aadhar`  
+**Authentication:** Required (Borrower)  
+**Query Parameters:** Required `aadhaarNumber` + pagination and filtering
+
+Get loans by Aadhaar number (alternative to my-loans if you want to specify Aadhaar).
+
+#### Query Parameters
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `aadhaarNumber` | string | Yes | Aadhaar number to search |
+| `page` | number | No | Page number (default: 1) |
+| `limit` | number | No | Items per page (default: 10) |
+| `startDate` | string | No | Filter from date |
+| `endDate` | string | No | Filter to date |
+| `status` | string | No | Payment status filter |
+| `minAmount` | number | No | Minimum amount |
+| `maxAmount` | number | No | Maximum amount |
+| `search` | string | No | Search lenders |
+
+---
+
 ## Borrower Payment APIs
 
 ### 1. Make Loan Payment
@@ -892,3 +981,46 @@ curl -X GET "http://localhost:5001/api/lender/loans/payments/pending?page=1&limi
 2. Lender reviews → Confirms/Rejects
 3. On confirmation → Updates loan totals and status
 4. On rejection → Payment marked as rejected with reason
+
+---
+
+## 📋 Frontend Development Checklist
+
+### **Borrower App Implementation:**
+- [ ] Loan dashboard using `GET /api/borrower/loans/my-loans`
+- [ ] Payment form with mode selection (cash/online)
+- [ ] Payment type selection (one-time/installment)
+- [ ] File upload component for payment proofs
+- [ ] Payment history screen with status indicators
+- [ ] Current loan balance display
+- [ ] Overdue payment alerts/notifications
+- [ ] Loan filtering and search functionality
+- [ ] Error handling for payment submissions
+
+### **Lender App Implementation:**
+- [ ] Pending payments dashboard with pagination
+- [ ] Payment review screen with proof viewing
+- [ ] Approve/reject buttons with confirmation dialogs
+- [ ] Payment notes/reason input for rejections
+- [ ] Real-time notifications for new payments
+- [ ] Loan status overview with payment tracking
+
+### **Shared Components:**
+- [ ] File viewer for payment proofs (images/PDFs)
+- [ ] Status badges (pending/confirmed/rejected/overdue)
+- [ ] Amount formatting and currency display
+- [ ] Date/time formatting for payment dates
+- [ ] Loading states and error boundaries
+
+### **API Integration Points:**
+- [ ] Authentication token handling
+- [ ] File upload with proper headers
+- [ ] Error response parsing and user feedback
+- [ ] Pagination handling for large lists
+- [ ] Real-time updates (websockets/polling)
+
+---
+
+## 📞 Support
+
+For any issues or questions, please contact the development team.

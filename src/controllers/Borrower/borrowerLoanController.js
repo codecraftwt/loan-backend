@@ -334,6 +334,118 @@ const makeLoanPayment = async (req, res) => {
   }
 };
 
+// Get loans for authenticated borrower (by borrower ID)
+const getMyLoans = async (req, res) => {
+  try {
+    const borrowerId = req.user.id;
+    const {
+      page = 1,
+      limit = 10,
+      startDate,
+      endDate,
+      status,
+      minAmount,
+      maxAmount,
+      search,
+    } = req.query;
+
+    // Get the borrower's Aadhaar number from their user profile
+    const borrower = await User.findById(borrowerId).select('aadharCardNo');
+    if (!borrower || !borrower.aadharCardNo) {
+      return res.status(404).json({ message: "Borrower profile not found or Aadhaar number missing" });
+    }
+
+    const query = { aadhaarNumber: borrower.aadharCardNo };
+
+    // Add filters
+    if (startDate) query.loanStartDate = { $gte: new Date(startDate) };
+    if (endDate)
+      query.loanEndDate = { ...query.loanEndDate, $lte: new Date(endDate) };
+    if (status) query.paymentStatus = status;
+    if (minAmount !== undefined || maxAmount !== undefined) {
+      query.amount = {};
+      if (minAmount !== undefined) query.amount.$gte = Number(minAmount);
+      if (maxAmount !== undefined) query.amount.$lte = Number(maxAmount);
+    }
+
+    // Add name search if provided
+    if (search) {
+      query.name = { $regex: search, $options: 'i' }; // Case-insensitive search
+    }
+
+    const options = {
+      sort: { createdAt: -1 },
+      populate: {
+        path: "lenderId",
+        select: "userName email mobileNo profileImage",
+      }
+    };
+
+    // Pagination and options
+    const { data: loans, pagination } = await paginateQuery(
+      Loan,
+      query,
+      page,
+      limit,
+      options
+    );
+
+    // Filter loans based on search (if search parameter exists)
+    let filteredLoans = loans;
+    if (search) {
+      filteredLoans = loans.filter(loan => {
+        // Only include loans that have a lender AND match the search
+        if (!loan.lenderId) return false;
+
+        // Check if lender matches search criteria
+        const lender = loan.lenderId;
+        const searchLower = search.toLowerCase();
+
+        return (
+          lender.userName?.toLowerCase().includes(searchLower) ||
+          lender.email?.toLowerCase().includes(searchLower) ||
+          lender.mobileNo?.includes(search)
+        );
+      });
+    }
+
+    // Calculate summary statistics
+    const totalLoans = filteredLoans.length;
+    const activeLoans = filteredLoans.filter(loan => loan.paymentStatus === 'part paid' || loan.paymentStatus === 'pending').length;
+    const completedLoans = filteredLoans.filter(loan => loan.paymentStatus === 'paid').length;
+    const overdueLoans = filteredLoans.filter(loan => loan.paymentStatus === 'overdue').length;
+    const totalAmountBorrowed = filteredLoans.reduce((sum, loan) => sum + loan.amount, 0);
+    const totalAmountPaid = filteredLoans.reduce((sum, loan) => sum + loan.totalPaid, 0);
+    const totalAmountRemaining = filteredLoans.reduce((sum, loan) => sum + loan.remainingAmount, 0);
+
+    return res.status(200).json({
+      message: "Borrower loans retrieved successfully",
+      data: filteredLoans,
+      summary: {
+        totalLoans,
+        activeLoans,
+        completedLoans,
+        overdueLoans,
+        totalAmountBorrowed,
+        totalAmountPaid,
+        totalAmountRemaining,
+      },
+      pagination: {
+        ...pagination,
+        totalDocuments: filteredLoans.length,
+        totalPages: Math.ceil(filteredLoans.length / (limit || 10))
+      },
+    });
+
+  } catch (error) {
+    console.error("Error retrieving borrower loans:", error);
+    return res.status(500).json({
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 // Get payment history for a loan (borrower)
 const getPaymentHistory = async (req, res) => {
   try {
@@ -381,5 +493,6 @@ module.exports = {
   updateLoanAcceptanceStatus,
   makeLoanPayment,
   getPaymentHistory,
+  getMyLoans,
 };
 
