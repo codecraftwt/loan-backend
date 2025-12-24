@@ -237,12 +237,13 @@ const makeLoanPayment = async (req, res) => {
     }
 
     let paymentData = {
-      amount,
+      amount: Number(amount), // Ensure it's a number
       paymentMode,
       paymentType,
       transactionId: transactionId || null,
       notes: notes || null,
       paymentDate: new Date(),
+      paymentConfirmation: "pending", // Add confirmation status
     };
 
     // Handle payment proof upload if provided
@@ -250,39 +251,17 @@ const makeLoanPayment = async (req, res) => {
       paymentData.paymentProof = req.file.path;
     }
 
-    // Calculate new totals
-    const newTotalPaid = loan.totalPaid + amount;
-    const newRemainingAmount = loan.amount - newTotalPaid;
-
-    // Handle different payment types
+    // DON'T update loan totals here - wait for lender confirmation
+    // Just set payment type and mode for the loan
     if (paymentType === "one-time") {
-      // One-time payment
-      if (amount >= loan.remainingAmount) {
-        // Full payment
-        loan.paymentStatus = "paid";
-        loan.totalPaid = loan.amount;
-        loan.remainingAmount = 0;
-        paymentData.amount = loan.remainingAmount; // Adjust to exact remaining amount
-      } else {
-        // Partial payment (but marked as one-time, so status stays part paid)
-        loan.paymentStatus = "part paid";
-        loan.totalPaid = newTotalPaid;
-        loan.remainingAmount = newRemainingAmount;
-      }
-
       loan.paymentType = "one-time";
       loan.paymentMode = paymentMode;
-
     } else if (paymentType === "installment") {
-      // Installment payment
-      loan.paymentStatus = "part paid";
-      loan.totalPaid = newTotalPaid;
-      loan.remainingAmount = newRemainingAmount;
       loan.paymentType = "installment";
       loan.paymentMode = paymentMode;
 
-      // Update installment tracking
-      loan.installmentPlan.paidInstallments += 1;
+      // DON'T increment paidInstallments here - wait for lender confirmation
+      // loan.installmentPlan.paidInstallments += 1;
 
       // Calculate next due date based on frequency
       if (loan.installmentPlan.installmentFrequency === "monthly") {
@@ -310,17 +289,62 @@ const makeLoanPayment = async (req, res) => {
 
     await loan.save();
 
-    // Send notification to lender
-    await sendLoanUpdateNotification(loan.aadhaarNumber, loan);
+    // Set payment confirmation status instead of sending notification
+    loan.paymentConfirmation = "pending";
+
+    // Calculate what totals would be after confirmation (for display only)
+    const currentTotalPaid = Number(loan.totalPaid) || 0;
+    const loanAmount = Number(loan.amount) || 0;
+    const paymentAmount = Number(amount) || 0;
+
+    const projectedTotalPaid = currentTotalPaid + paymentAmount;
+    const projectedRemainingAmount = loanAmount - projectedTotalPaid;
+
+    // Get installment information
+    const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending').length;
+    const submittedInstallments = loan.paymentHistory.filter(p => p.paymentType === 'installment').length;
 
     return res.status(200).json({
-      message: "Payment submitted successfully. Awaiting lender confirmation.",
+      message: `Payment of ₹${paymentAmount} submitted successfully. Lender confirmation required.`,
       data: {
         loanId: loan._id,
-        paymentAmount: amount,
-        totalPaid: loan.totalPaid,
-        remainingAmount: loan.remainingAmount,
-        paymentStatus: loan.paymentStatus,
+        paymentAmount: paymentAmount,
+        paymentType: paymentType,
+        paymentMode: paymentMode,
+
+        // Current loan status
+        loanSummary: {
+          totalLoanAmount: loanAmount,
+          currentPaidAmount: currentTotalPaid,
+          currentRemainingAmount: loanAmount - currentTotalPaid,
+          loanStatus: loan.paymentStatus
+        },
+
+        // What will happen after confirmation
+        afterConfirmation: {
+          projectedPaidAmount: projectedTotalPaid,
+          projectedRemainingAmount: Math.max(0, projectedRemainingAmount),
+          projectedStatus: projectedRemainingAmount <= 0 ? "paid" : "part paid"
+        },
+
+        // Installment information
+        installmentInfo: {
+          isInstallmentPayment: paymentType === "installment",
+          currentInstallmentNumber: submittedInstallments,
+          totalPendingPayments: pendingPayments,
+          nextDueDate: loan.installmentPlan?.nextDueDate || null,
+          frequency: loan.installmentPlan?.installmentFrequency || null
+        },
+
+        // Lender contact information
+        lenderContact: {
+          lenderName: loan.lenderId?.userName || "Your Lender",
+          lenderPhone: loan.lenderId?.mobileNo || "Contact lender directly",
+          message: `Please contact ${loan.lenderId?.userName || 'your lender'} at ${loan.lenderId?.mobileNo || 'their registered number'} to confirm this payment.`
+        },
+
+        paymentConfirmation: "pending",
+        submittedAt: new Date(),
         paymentHistory: loan.paymentHistory[loan.paymentHistory.length - 1],
       },
     });
@@ -425,9 +449,53 @@ const getMyLoans = async (req, res) => {
     const totalAmountPaid = filteredLoans.reduce((sum, loan) => sum + loan.totalPaid, 0);
     const totalAmountRemaining = filteredLoans.reduce((sum, loan) => sum + loan.remainingAmount, 0);
 
+    // Enhance loan data with better installment and payment information
+    const enhancedLoans = filteredLoans.map(loan => {
+      const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
+      const confirmedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'confirmed');
+
+      // Group payments by installment number for better display
+      const installmentBreakdown = confirmedPayments.map((payment, index) => ({
+        installmentNumber: index + 1,
+        amount: payment.amount,
+        paymentDate: payment.paymentDate,
+        confirmedAt: payment.confirmedAt
+      }));
+
+      return {
+        ...loan.toObject(),
+        paymentSummary: {
+          totalLoanAmount: loan.amount,
+          totalPaidAmount: loan.totalPaid,
+          remainingAmount: loan.remainingAmount,
+          paymentStatus: loan.paymentStatus,
+          paymentConfirmation: loan.paymentConfirmation
+        },
+        installmentDetails: {
+          isInstallmentLoan: loan.paymentType === 'installment',
+          paidInstallments: loan.installmentPlan?.paidInstallments || 0,
+          totalInstallments: loan.installmentPlan?.totalInstallments || 1,
+          installmentAmount: loan.installmentPlan?.installmentAmount || loan.amount,
+          frequency: loan.installmentPlan?.installmentFrequency || null,
+          nextDueDate: loan.installmentPlan?.nextDueDate || null,
+          installmentBreakdown: installmentBreakdown
+        },
+        pendingPayments: {
+          count: pendingPayments.length,
+          totalAmount: pendingPayments.reduce((sum, p) => sum + p.amount, 0),
+          payments: pendingPayments.map(p => ({
+            amount: p.amount,
+            submittedDate: p.paymentDate,
+            paymentType: p.paymentType,
+            paymentMode: p.paymentMode
+          }))
+        }
+      };
+    });
+
     return res.status(200).json({
       message: "Borrower loans retrieved successfully",
-      data: filteredLoans,
+      data: enhancedLoans,
       summary: {
         totalLoans,
         activeLoans,
@@ -453,11 +521,18 @@ const getMyLoans = async (req, res) => {
   }
 };
 
-// Get payment history for a loan (borrower)
+// Get payment history for a loan (no authentication required)
 const getPaymentHistory = async (req, res) => {
   try {
-    const borrowerId = req.user.id;
+    const { borrowerId } = req.query;
     const { loanId } = req.params;
+
+    // Validate borrowerId
+    if (!borrowerId) {
+      return res.status(400).json({
+        message: "borrowerId is required as query parameter",
+      });
+    }
 
     // Find the loan
     const loan = await Loan.findById(loanId);
@@ -473,15 +548,52 @@ const getPaymentHistory = async (req, res) => {
       });
     }
 
+    // Enhance payment history with installment information
+    const confirmedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'confirmed');
+    const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
+
+    const installmentBreakdown = confirmedPayments.map((payment, index) => ({
+      installmentNumber: index + 1,
+      amount: payment.amount,
+      paymentDate: payment.paymentDate,
+      confirmedAt: payment.confirmedAt,
+      paymentMode: payment.paymentMode,
+      notes: payment.notes
+    }));
+
     return res.status(200).json({
       message: "Payment history retrieved successfully",
       data: {
         loanId: loan._id,
-        totalAmount: loan.amount,
-        totalPaid: loan.totalPaid,
-        remainingAmount: loan.remainingAmount,
-        paymentStatus: loan.paymentStatus,
-        paymentHistory: loan.paymentHistory,
+        loanSummary: {
+          totalLoanAmount: loan.amount,
+          totalPaidAmount: loan.totalPaid,
+          remainingAmount: loan.remainingAmount,
+          paymentStatus: loan.paymentStatus,
+          paymentConfirmation: loan.paymentConfirmation,
+          loanType: loan.paymentType,
+          paymentMode: loan.paymentMode
+        },
+        installmentDetails: {
+          isInstallmentLoan: loan.paymentType === 'installment',
+          paidInstallments: loan.installmentPlan?.paidInstallments || 0,
+          totalInstallments: loan.installmentPlan?.totalInstallments || 1,
+          installmentAmount: loan.installmentPlan?.installmentAmount || loan.amount,
+          frequency: loan.installmentPlan?.installmentFrequency || null,
+          nextDueDate: loan.installmentPlan?.nextDueDate || null,
+          installmentBreakdown: installmentBreakdown
+        },
+        paymentHistory: {
+          allPayments: loan.paymentHistory,
+          confirmedPayments: confirmedPayments.length,
+          pendingPayments: pendingPayments.length,
+          pendingAmount: pendingPayments.reduce((sum, p) => sum + p.amount, 0)
+        },
+        lenderInfo: {
+          lenderName: loan.lenderId?.userName || "Lender",
+          lenderPhone: loan.lenderId?.mobileNo || "Contact lender",
+          lenderEmail: loan.lenderId?.email || "Contact lender"
+        },
         overdueDetails: loan.overdueDetails,
       },
     });

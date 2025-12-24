@@ -253,15 +253,30 @@ const getLoansByLender = async (req, res) => {
 const GetLoanDetails = async (req, res) => {
   try {
     const loanId = req.params.id;
-    const loan = await Loan.findById(loanId);
+    const loan = await Loan.findById(loanId).populate('borrowerId', 'userName mobileNo');
 
     if (!loan) {
       return res.status(404).json({ message: "Loan data not found" });
     }
 
+    // Check for pending payment confirmations
+    const pendingConfirmations = loan.paymentHistory.filter(
+      payment => payment.paymentStatus === 'pending' && loan.paymentConfirmation === 'pending'
+    );
+
+    const responseData = {
+      ...loan.toObject(),
+      pendingConfirmations: pendingConfirmations.length > 0 ? {
+        count: pendingConfirmations.length,
+        totalAmount: pendingConfirmations.reduce((sum, payment) => sum + payment.amount, 0),
+        payments: pendingConfirmations,
+        message: `Borrower has submitted ${pendingConfirmations.length} payment(s) totaling ₹${pendingConfirmations.reduce((sum, payment) => sum + payment.amount, 0)} for confirmation.`
+      } : null
+    };
+
     return res.status(200).json({
       message: "Loan data fetched successfully",
-      data: loan,
+      data: responseData,
     });
   } catch (error) {
     return res.status(500).json({
@@ -855,9 +870,26 @@ const confirmPayment = async (req, res) => {
       payment.notes = notes;
     }
 
+    // Update loan payment confirmation status
+    loan.paymentConfirmation = "confirmed";
+
     // Update loan totals only if payment was previously pending
     loan.totalPaid += payment.amount;
     loan.remainingAmount = loan.amount - loan.totalPaid;
+
+    // Update installment tracking if this is an installment payment
+    if (payment.paymentType === "installment") {
+      loan.installmentPlan.paidInstallments += 1;
+
+      // Calculate next due date based on frequency
+      if (loan.installmentPlan.installmentFrequency === "monthly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      } else if (loan.installmentPlan.installmentFrequency === "weekly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      } else if (loan.installmentPlan.installmentFrequency === "quarterly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+      }
+    }
 
     // Update payment status based on remaining amount
     if (loan.remainingAmount <= 0) {
@@ -949,6 +981,9 @@ const rejectPayment = async (req, res) => {
     payment.confirmedBy = lenderId;
     payment.confirmedAt = new Date();
     payment.notes = `Rejected: ${reason}`;
+
+    // Update loan payment confirmation status
+    loan.paymentConfirmation = "rejected";
 
     await loan.save();
 

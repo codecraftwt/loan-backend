@@ -68,13 +68,8 @@ router.post(
   makeLoanPayment
 );
 
-// Get payment history for a loan (borrower views their payment history)
-router.get(
-  "/payment-history/:loanId",
-  authenticateUser,
-  checkBorrower,
-  getPaymentHistory
-);
+// Get payment history for a loan (no authentication required)
+router.get("/payment-history/:loanId", getPaymentHistory);
 
 module.exports = router;
 
