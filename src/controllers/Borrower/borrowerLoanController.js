@@ -334,10 +334,10 @@ const makeLoanPayment = async (req, res) => {
   }
 };
 
-// Get loans for authenticated borrower (by borrower ID)
+// Get loans for borrower by borrower ID (no token required)
 const getMyLoans = async (req, res) => {
   try {
-    const borrowerId = req.user.id;
+    const { borrowerId } = req.query;
     const {
       page = 1,
       limit = 10,
@@ -348,6 +348,13 @@ const getMyLoans = async (req, res) => {
       maxAmount,
       search,
     } = req.query;
+
+    // Validate borrowerId is provided
+    if (!borrowerId) {
+      return res.status(400).json({
+        message: "borrowerId is required as query parameter",
+      });
+    }
 
     // Get the borrower's Aadhaar number from their user profile
     const borrower = await User.findById(borrowerId).select('aadharCardNo');

@@ -45,8 +45,8 @@ const checkBorrower = require("../../middlewares/checkBorrower");
 
 const router = express.Router();
 
-// Get authenticated borrower's loans (automatically uses their borrower ID)
-router.get("/my-loans", authenticateUser, checkBorrower, getMyLoans);
+// Get borrower's loans by borrower ID (no authentication required)
+router.get("/my-loans", getMyLoans);
 
 // Get loans by Aadhaar (borrower views their loans)
 router.get("/by-aadhar", authenticateUser, checkBorrower, getLoanByAadhaar);

@@ -637,14 +637,15 @@ The payment system supports both cash and online payment modes with one-time and
 
 ### 1. Get My Loans
 **Endpoint:** `GET /api/borrower/loans/my-loans`  
-**Authentication:** Required (Borrower)  
-**Query Parameters:** Pagination and filtering support
+**Authentication:** Not Required  
+**Query Parameters:** borrowerId required + pagination and filtering support
 
-Get all loans for the authenticated borrower automatically (no need to pass Aadhaar number).
+Get all loans for a borrower by borrower ID (no authentication token needed).
 
 #### Query Parameters
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|
+| `borrowerId` | string | Yes | - | Borrower ID (MongoDB ObjectId) |
 | `page` | number | No | 1 | Page number |
 | `limit` | number | No | 10 | Items per page |
 | `startDate` | string | No | - | Filter loans from this date (YYYY-MM-DD) |
@@ -656,8 +657,7 @@ Get all loans for the authenticated borrower automatically (no need to pass Aadh
 
 #### Example Request
 ```bash
-curl -X GET "http://localhost:5001/api/borrower/loans/my-loans?page=1&limit=10&status=part%20paid" \
-  -H "Authorization: Bearer YOUR_BORROWER_TOKEN"
+curl -X GET "http://localhost:5001/api/borrower/loans/my-loans?borrowerId=507f1f77bcf86cd799439011&page=1&limit=10&status=part%20paid"
 ```
 
 #### Success Response (200)
@@ -987,7 +987,7 @@ curl -X GET "http://localhost:5001/api/lender/loans/payments/pending?page=1&limi
 ## 📋 Frontend Development Checklist
 
 ### **Borrower App Implementation:**
-- [ ] Loan dashboard using `GET /api/borrower/loans/my-loans`
+- [ ] Loan dashboard using `GET /api/borrower/loans/my-loans?borrowerId={id}`
 - [ ] Payment form with mode selection (cash/online)
 - [ ] Payment type selection (one-time/installment)
 - [ ] File upload component for payment proofs
