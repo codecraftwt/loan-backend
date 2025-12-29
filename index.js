@@ -9,6 +9,7 @@ const SubscriptionRoutes = require("./src/routes/subscriptionRoutes");
 const BorrowerRoutes = require("./src/routes/Borrower/borrowerRoutes");
 const LenderLoanRoutes = require("./src/routes/Lender/lenderLoanRoutes");
 const HistoryRoutes = require("./src/routes/History/historyRoutes");
+const AdminRoutes = require("./src/routes/Admin/adminRoutes");
 
 const app = express();
 
@@ -29,6 +30,7 @@ app.use("/api/subscription", SubscriptionRoutes);
 app.use("/api/borrower", BorrowerRoutes);
 app.use("/api/lender/loans", LenderLoanRoutes);
 app.use("/api/history", HistoryRoutes);
+app.use("/api/admin", AdminRoutes);
 
 app.get("/", (req, res) => {
   res.send("Loan Management API is running..");

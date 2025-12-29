@@ -13,6 +13,7 @@ const {
   confirmPayment,
   rejectPayment,
   getPendingPayments,
+  getLenderLoanStatistics,
 } = require("../../controllers/Lender/lenderLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
@@ -23,6 +24,9 @@ const router = express.Router();
 
 // Recent activity
 router.get('/recent-activities', authenticateUser, checkLender, getRecentActivities);
+
+// Get lender loan statistics with percentages (for dashboard/graph)
+router.get('/statistics', authenticateUser, checkLender, getLenderLoanStatistics);
 
 // Create loan (only lenders can create loans for borrowers)
 // Subscription check commented out
