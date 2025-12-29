@@ -5,9 +5,6 @@ const {
   sendLoanUpdateNotification,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
-// Subscription related code commented out
-// const Subscription = require("../../models/Subscription");
-// const { canUserCreateLoan } = require("../../services/subscriptionService");
 const { generateLoanAgreement } = require("../../services/agreementService");
 
 const createLoan = async (req, res) => {
@@ -35,15 +32,6 @@ const createLoan = async (req, res) => {
       });
     }
 
-    // Subscription related code commented out
-    // // Check if user has active subscription
-    // const { canCreate, message } = await canUserCreateLoan(lenderId);
-    // if (!canCreate) {
-    //   return res.status(403).json({
-    //     message: message
-    //   });
-    // }
-
     // First, find the lender (current user)
     const lender = await User.findById(lenderId);
 
@@ -53,58 +41,6 @@ const createLoan = async (req, res) => {
         message: "Lender not found",
       });
     }
-
-    // Subscription related code commented out
-    // // Check subscription - Middleware will handle this, but double-check
-    // if (!lender.hasActiveSubscription) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: "Active subscription is required to create loans",
-    //     code: "SUBSCRIPTION_REQUIRED",
-    //     redirectTo: "/subscription/plans"
-    //   });
-    // }
-
-    // // Check subscription expiry
-    // if (lender.subscriptionExpiry && new Date() > lender.subscriptionExpiry) {
-    //   return res.status(403).json({
-    //     success: false,
-    //     message: "Your subscription has expired. Please renew to create loans.",
-    //     code: "SUBSCRIPTION_EXPIRED"
-    //   });
-    // }
-
-    // // Get active subscription to check loan limit
-    // const activeSubscription = await Subscription.findOne({
-    //   user: lenderId,
-    //   status: 'active'
-    // });
-
-    // if (activeSubscription) {
-    //   // Check current loan count
-    //   const currentLoanCount = await Loan.countDocuments({
-    //     lenderId: lenderId,
-    //     status: 'pending'
-    //   });
-
-    //   if (currentLoanCount >= activeSubscription.features.maxLoans) {
-    //     return res.status(403).json({
-    //       success: false,
-    //       message: `Loan limit reached. Your ${lender.subscriptionPlan} plan allows maximum ${activeSubscription.features.maxLoans} active loans.`,
-    //       code: "LOAN_LIMIT_EXCEEDED"
-    //     });
-    //   }
-
-    //   // Check loan amount limit
-    //   if (activeSubscription.features.maxLoanAmount &&
-    //     LoanData.amount > activeSubscription.features.maxLoanAmount) {
-    //     return res.status(403).json({
-    //       success: false,
-    //       message: `Loan amount exceeds your plan limit of ₹${activeSubscription.features.maxLoanAmount}`,
-    //       code: "LOAN_AMOUNT_EXCEEDED"
-    //     });
-    //   }
-    // }
 
     // Check if the lender is trying to give loan to themselves
     if (lender.aadharCardNo === LoanData.aadharCardNo) {
@@ -1023,17 +959,20 @@ const getPendingPayments = async (req, res) => {
     // Filter loans that have pending payments
     const pendingPayments = [];
     loans.forEach(loan => {
-      const pending = loan.paymentHistory.filter(payment => payment.paymentStatus === 'pending');
-      if (pending.length > 0) {
-        pendingPayments.push({
-          loanId: loan._id,
-          loanName: loan.name,
-          totalAmount: loan.amount,
-          totalPaid: loan.totalPaid,
-          remainingAmount: loan.remainingAmount,
-          borrowerAadhaar: loan.aadhaarNumber,
-          pendingPayments: pending,
-        });
+      // Check if paymentHistory exists and is an array
+      if (loan.paymentHistory && Array.isArray(loan.paymentHistory)) {
+        const pending = loan.paymentHistory.filter(payment => payment.paymentStatus === 'pending');
+        if (pending.length > 0) {
+          pendingPayments.push({
+            loanId: loan._id,
+            loanName: loan.name,
+            totalAmount: loan.amount,
+            totalPaid: loan.totalPaid,
+            remainingAmount: loan.remainingAmount,
+            borrowerAadhaar: loan.aadhaarNumber,
+            pendingPayments: pending,
+          });
+        }
       }
     });
 

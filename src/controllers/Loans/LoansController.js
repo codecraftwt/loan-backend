@@ -6,26 +6,13 @@ const {
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
 
-// Add this import at the top
-const Subscription = require("../../models/Subscription");
-const { canUserCreateLoan } = require("../../services/subscriptionService");
-
 const AddLoan = async (req, res) => {
   try {
     const lenderId = req.user.id;
     const LoanData = req.body;
 
-    // Check if user has active subscription
-    const { canCreate, message } = await canUserCreateLoan(lenderId);
-
-    if (!canCreate) {
-      return res.status(403).json({
-        message: message
-      });
-    }
-
-    // First, find the lender (current user) to get their subscription status
-    const lender = await User.findById(lenderId).select('hasActiveSubscription subscriptionPlan subscriptionExpiry');
+    // First, find the lender (current user)
+    const lender = await User.findById(lenderId);
 
     if (!lender) {
       return res.status(404).json({
@@ -34,58 +21,6 @@ const AddLoan = async (req, res) => {
       });
     }
 
-    // Check subscription - Middleware will handle this, but double-check
-    if (!lender.hasActiveSubscription) {
-      return res.status(403).json({
-        success: false,
-        message: "Active subscription is required to create loans",
-        code: "SUBSCRIPTION_REQUIRED",
-        redirectTo: "/subscription/plans"
-      });
-    }
-
-    // Check subscription expiry
-    if (lender.subscriptionExpiry && new Date() > lender.subscriptionExpiry) {
-      return res.status(403).json({
-        success: false,
-        message: "Your subscription has expired. Please renew to create loans.",
-        code: "SUBSCRIPTION_EXPIRED"
-      });
-    }
-
-    // Get active subscription to check loan limit
-    const activeSubscription = await Subscription.findOne({
-      user: lenderId,
-      status: 'active'
-    });
-
-    if (activeSubscription) {
-      // Check current loan count
-      const currentLoanCount = await Loan.countDocuments({
-        lenderId: lenderId,
-        status: 'pending'
-      });
-
-      if (currentLoanCount >= activeSubscription.features.maxLoans) {
-        return res.status(403).json({
-          success: false,
-          message: `Loan limit reached. Your ${lender.subscriptionPlan} plan allows maximum ${activeSubscription.features.maxLoans} active loans.`,
-          code: "LOAN_LIMIT_EXCEEDED"
-        });
-      }
-
-      // Check loan amount limit
-      if (activeSubscription.features.maxLoanAmount &&
-        LoanData.amount > activeSubscription.features.maxLoanAmount) {
-        return res.status(403).json({
-          success: false,
-          message: `Loan amount exceeds your plan limit of ₹${activeSubscription.features.maxLoanAmount}`,
-          code: "LOAN_AMOUNT_EXCEEDED"
-        });
-      }
-    }
-
-    // Rest of your existing code...
     // Check if the lender is trying to give loan to themselves
     if (lender.aadharCardNo === LoanData.aadharCardNo) {
       return res.status(400).json({

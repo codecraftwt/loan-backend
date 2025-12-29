@@ -1,6 +1,6 @@
 const Plan = require("../../models/Plan");
 
-// Create a new subscription plan (Admin only)
+// Create a new plan (Admin only)
 const createPlan = async (req, res) => {
   try {
     const {
@@ -116,7 +116,7 @@ const createPlan = async (req, res) => {
   }
 };
 
-// Edit/Update an existing subscription plan (Admin only)
+// Edit/Update an existing plan (Admin only)
 const editPlan = async (req, res) => {
   try {
     const planId = req.params.id;

@@ -64,82 +64,9 @@ const userSchema = new mongoose.Schema(
         required: false, // Tokens are optional initially and will be updated later
       },
     ],
-    subscriptionId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Subscription",
-      required: false,
-    },
-    razorpaySubscriptionId: {
-      type: String,
-    },
-    razorpayPaymentId: {
-      type: String,
-      required: false,
-    },
-    razorpayOrderId: {
-      type: String,
-      required: false,
-    },
-    razorpaySignature: {
-      type: String,
-      required: false,
-    },
-    amount: {
-      type: Number,
-      required: false,
-    },
-    status: {
-      type: String,
-      enum: [
-        "created",
-        "authenticated",
-        "active",
-        "pending",
-        "halted",
-        "cancelled",
-        "completed",
-        "expired",
-      ],
-      default: "created",
-    },
-    startDate: {
-      type: Date,
-      default: Date.now,
-    },
-    endDate: {
-      type: Date,
-      required: false,
-    },
-    paymentStatus: {
-      type: String,
-      enum: ["pending", "captured", "failed", "refunded"],
-      default: "pending",
-    },
     isActive: {
       type: Boolean,
       default: true
-    },
-
-    // Plan details stored directly in the user record
-    subscriptionPlan: {
-      name: {
-        type: String,
-      },
-      description: {
-        type: String,
-      },
-      amount: {
-        type: Number,
-      },
-      duration: {
-        type: String, // 'monthly', 'yearly', etc.
-      },
-      maxLoans: {
-        type: Number,
-      },
-      features: {
-        type: [String], // List of features (e.g., 'Advanced Analytics', 'Priority Support')
-      },
     }
   },
   { timestamps: true }

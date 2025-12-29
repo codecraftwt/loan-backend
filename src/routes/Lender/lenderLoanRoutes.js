@@ -17,8 +17,6 @@ const {
 } = require("../../controllers/Lender/lenderLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
-// Subscription middleware commented out
-// const checkSubscription = require("../../middlewares/subscriptionCheck");
 
 const router = express.Router();
 
@@ -29,7 +27,6 @@ router.get('/recent-activities', authenticateUser, checkLender, getRecentActivit
 router.get('/statistics', authenticateUser, checkLender, getLenderLoanStatistics);
 
 // Create loan (only lenders can create loans for borrowers)
-// Subscription check commented out
 router.post("/create", authenticateUser, checkLender, createLoan);
 
 // Verify OTP and confirm loan

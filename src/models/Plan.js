@@ -20,10 +20,6 @@ const planSchema = new mongoose.Schema({
     type: Number,
     required: true
   },
-  razorpayPlanId: {
-    type: String,
-    default: ""
-  },
   planFeatures: {
     unlimitedLoans: {
       type: Boolean,
