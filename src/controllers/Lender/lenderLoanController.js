@@ -815,8 +815,9 @@ const confirmPayment = async (req, res) => {
 
     // Update installment tracking if this is an installment payment
     if (payment.paymentType === "installment") {
-      loan.installmentPlan.paidInstallments += 1;
-
+      // The installmentNumber is already set when borrower submits payment
+      // We don't need to increment paidInstallments here - we count confirmed installments
+      
       // Calculate next due date based on frequency
       if (loan.installmentPlan.installmentFrequency === "monthly") {
         loan.installmentPlan.nextDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);

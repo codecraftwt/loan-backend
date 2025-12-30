@@ -67,6 +67,32 @@ const userSchema = new mongoose.Schema(
     isActive: {
       type: Boolean,
       default: true
+    },
+    // Plan purchase details
+    currentPlanId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Plan",
+      required: false,
+    },
+    planPurchaseDate: {
+      type: Date,
+      required: false,
+    },
+    planExpiryDate: {
+      type: Date,
+      required: false,
+    },
+    razorpayOrderId: {
+      type: String,
+      required: false,
+    },
+    razorpayPaymentId: {
+      type: String,
+      required: false,
+    },
+    razorpaySignature: {
+      type: String,
+      required: false,
     }
   },
   { timestamps: true }

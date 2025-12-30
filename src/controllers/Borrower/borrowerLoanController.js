@@ -185,7 +185,6 @@ const makeLoanPayment = async (req, res) => {
       amount,
       transactionId,
       notes,
-      installmentNumber, // for installment payments
     } = req.body;
 
     // Validate required fields
@@ -236,10 +235,21 @@ const makeLoanPayment = async (req, res) => {
       });
     }
 
+    // Calculate installment number for installment payments
+    let installmentNumber = null;
+    if (paymentType === "installment") {
+      // Count confirmed installment payments to determine next installment number
+      const confirmedInstallmentPayments = loan.paymentHistory.filter(
+        p => p.paymentType === "installment" && p.paymentStatus === "confirmed"
+      );
+      installmentNumber = confirmedInstallmentPayments.length + 1;
+    }
+
     let paymentData = {
       amount: Number(amount), // Ensure it's a number
       paymentMode,
       paymentType,
+      installmentNumber: installmentNumber, // Store installment number
       transactionId: transactionId || null,
       notes: notes || null,
       paymentDate: new Date(),
@@ -302,7 +312,9 @@ const makeLoanPayment = async (req, res) => {
 
     // Get installment information
     const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending').length;
-    const submittedInstallments = loan.paymentHistory.filter(p => p.paymentType === 'installment').length;
+    const confirmedInstallmentPayments = loan.paymentHistory.filter(
+      p => p.paymentType === 'installment' && p.paymentStatus === 'confirmed'
+    ).length;
 
     return res.status(200).json({
       message: `Payment of ₹${paymentAmount} submitted successfully. Lender confirmation required.`,
@@ -311,6 +323,7 @@ const makeLoanPayment = async (req, res) => {
         paymentAmount: paymentAmount,
         paymentType: paymentType,
         paymentMode: paymentMode,
+        installmentNumber: installmentNumber, // Include installment number in response
 
         // Current loan status
         loanSummary: {
@@ -330,7 +343,8 @@ const makeLoanPayment = async (req, res) => {
         // Installment information
         installmentInfo: {
           isInstallmentPayment: paymentType === "installment",
-          currentInstallmentNumber: submittedInstallments,
+          currentInstallmentNumber: installmentNumber, // This payment's installment number
+          totalConfirmedInstallments: confirmedInstallmentPayments, // Already confirmed installments
           totalPendingPayments: pendingPayments,
           nextDueDate: loan.installmentPlan?.nextDueDate || null,
           frequency: loan.installmentPlan?.installmentFrequency || null
@@ -454,13 +468,21 @@ const getMyLoans = async (req, res) => {
       const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
       const confirmedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'confirmed');
 
-      // Group payments by installment number for better display
-      const installmentBreakdown = confirmedPayments.map((payment, index) => ({
-        installmentNumber: index + 1,
-        amount: payment.amount,
-        paymentDate: payment.paymentDate,
-        confirmedAt: payment.confirmedAt
-      }));
+      // Group installment payments by installment number for better display
+      const confirmedInstallmentPayments = loan.paymentHistory.filter(
+        p => p.paymentType === 'installment' && p.paymentStatus === 'confirmed'
+      );
+      
+      const installmentBreakdown = confirmedInstallmentPayments
+        .sort((a, b) => (a.installmentNumber || 0) - (b.installmentNumber || 0))
+        .map((payment) => ({
+          installmentNumber: payment.installmentNumber || null,
+          amount: payment.amount,
+          paymentDate: payment.paymentDate,
+          confirmedAt: payment.confirmedAt,
+          paymentMode: payment.paymentMode,
+          notes: payment.notes
+        }));
 
       return {
         ...loan.toObject(),
@@ -473,12 +495,12 @@ const getMyLoans = async (req, res) => {
         },
         installmentDetails: {
           isInstallmentLoan: loan.paymentType === 'installment',
-          paidInstallments: loan.installmentPlan?.paidInstallments || 0,
+          paidInstallments: confirmedInstallmentPayments.length, // Count of confirmed installment payments
           totalInstallments: loan.installmentPlan?.totalInstallments || 1,
           installmentAmount: loan.installmentPlan?.installmentAmount || loan.amount,
           frequency: loan.installmentPlan?.installmentFrequency || null,
           nextDueDate: loan.installmentPlan?.nextDueDate || null,
-          installmentBreakdown: installmentBreakdown
+          installmentBreakdown: installmentBreakdown // Shows all installments with their numbers
         },
         pendingPayments: {
           count: pendingPayments.length,
@@ -487,7 +509,11 @@ const getMyLoans = async (req, res) => {
             amount: p.amount,
             submittedDate: p.paymentDate,
             paymentType: p.paymentType,
-            paymentMode: p.paymentMode
+            paymentMode: p.paymentMode,
+            installmentNumber: p.installmentNumber || null, // Include installment number
+            installmentLabel: p.paymentType === 'installment' && p.installmentNumber 
+              ? `Installment ${p.installmentNumber}` 
+              : null
           }))
         }
       };
@@ -551,15 +577,23 @@ const getPaymentHistory = async (req, res) => {
     // Enhance payment history with installment information
     const confirmedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'confirmed');
     const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
+    const confirmedInstallmentPayments = loan.paymentHistory.filter(
+      p => p.paymentType === 'installment' && p.paymentStatus === 'confirmed'
+    );
 
-    const installmentBreakdown = confirmedPayments.map((payment, index) => ({
-      installmentNumber: index + 1,
-      amount: payment.amount,
-      paymentDate: payment.paymentDate,
-      confirmedAt: payment.confirmedAt,
-      paymentMode: payment.paymentMode,
-      notes: payment.notes
-    }));
+    // Create installment breakdown - use stored installmentNumber from payment records
+    const installmentBreakdown = confirmedInstallmentPayments
+      .sort((a, b) => (a.installmentNumber || 0) - (b.installmentNumber || 0))
+      .map((payment) => ({
+        installmentNumber: payment.installmentNumber || null,
+        amount: payment.amount,
+        paymentDate: payment.paymentDate,
+        confirmedAt: payment.confirmedAt,
+        paymentMode: payment.paymentMode,
+        notes: payment.notes,
+        transactionId: payment.transactionId,
+        paymentProof: payment.paymentProof
+      }));
 
     return res.status(200).json({
       message: "Payment history retrieved successfully",
@@ -567,28 +601,43 @@ const getPaymentHistory = async (req, res) => {
         loanId: loan._id,
         loanSummary: {
           totalLoanAmount: loan.amount,
-          totalPaidAmount: loan.totalPaid,
+          totalPaid: loan.totalPaid,
           remainingAmount: loan.remainingAmount,
-          paymentStatus: loan.paymentStatus,
-          paymentConfirmation: loan.paymentConfirmation,
-          loanType: loan.paymentType,
-          paymentMode: loan.paymentMode
+          paymentStatus: loan.paymentStatus, // "pending", "part paid", "paid", "overdue"
+          paymentType: loan.paymentType, // "one-time" or "installment"
+          paymentMode: loan.paymentMode // "cash" or "online"
         },
-        installmentDetails: {
-          isInstallmentLoan: loan.paymentType === 'installment',
-          paidInstallments: loan.installmentPlan?.paidInstallments || 0,
-          totalInstallments: loan.installmentPlan?.totalInstallments || 1,
-          installmentAmount: loan.installmentPlan?.installmentAmount || loan.amount,
-          frequency: loan.installmentPlan?.installmentFrequency || null,
+        // Installment Details (only for installment loans)
+        installmentDetails: loan.paymentType === 'installment' ? {
+          totalInstallmentsPaid: confirmedInstallmentPayments.length, // How many installments have been paid
           nextDueDate: loan.installmentPlan?.nextDueDate || null,
-          installmentBreakdown: installmentBreakdown
-        },
-        paymentHistory: {
-          allPayments: loan.paymentHistory,
+          frequency: loan.installmentPlan?.installmentFrequency || null, // "weekly", "monthly", "quarterly"
+          paidInstallments: installmentBreakdown // Detailed list of all paid installments with amounts and dates
+        } : null,
+        // All Payment Records
+        payments: loan.paymentHistory.map(payment => ({
+          _id: payment._id,
+          amount: payment.amount,
+          paymentDate: payment.paymentDate,
+          paymentMode: payment.paymentMode,
+          paymentStatus: payment.paymentStatus, // "pending", "confirmed", "rejected"
+          confirmedAt: payment.confirmedAt,
+          notes: payment.notes,
+          transactionId: payment.transactionId,
+          // For installment payments only
+          installmentNumber: payment.installmentNumber || null,
+          installmentLabel: payment.paymentType === 'installment' && payment.installmentNumber 
+            ? `Installment ${payment.installmentNumber}` 
+            : null
+        })),
+        // Payment Statistics
+        paymentStats: {
+          totalPayments: loan.paymentHistory.length,
           confirmedPayments: confirmedPayments.length,
           pendingPayments: pendingPayments.length,
           pendingAmount: pendingPayments.reduce((sum, p) => sum + p.amount, 0)
         },
+        // Lender Contact Information
         lenderInfo: {
           lenderName: loan.lenderId?.userName || "Lender",
           lenderPhone: loan.lenderId?.mobileNo || "Contact lender",
@@ -614,4 +663,7 @@ module.exports = {
   getPaymentHistory,
   getMyLoans,
 };
+
+
+
 

@@ -17,6 +17,7 @@ const {
 } = require("../../controllers/Lender/lenderLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
+const checkActivePlan = require("../../middlewares/checkActivePlan");
 
 const router = express.Router();
 
@@ -26,8 +27,8 @@ router.get('/recent-activities', authenticateUser, checkLender, getRecentActivit
 // Get lender loan statistics with percentages (for dashboard/graph)
 router.get('/statistics', authenticateUser, checkLender, getLenderLoanStatistics);
 
-// Create loan (only lenders can create loans for borrowers)
-router.post("/create", authenticateUser, checkLender, createLoan);
+// Create loan (only lenders can create loans for borrowers) - requires active plan
+router.post("/create", authenticateUser, checkLender, checkActivePlan, createLoan);
 
 // Verify OTP and confirm loan
 router.post("/verify-otp", authenticateUser, checkLender, verifyOTPAndConfirmLoan);

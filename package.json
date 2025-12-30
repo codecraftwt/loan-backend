@@ -26,6 +26,7 @@
     "multer-storage-cloudinary": "^4.0.0",
     "node-cron": "^3.0.3",
     "nodemailer": "^6.9.15",
+    "razorpay": "^2.9.6",
     "twilio": "^5.10.7"
   },
   "devDependencies": {

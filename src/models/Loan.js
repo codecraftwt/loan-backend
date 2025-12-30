@@ -145,6 +145,10 @@ const loanSchema = new mongoose.Schema(
         enum: ["one-time", "installment"],
         required: true,
       },
+      installmentNumber: {
+        type: Number,
+        default: null,
+      },
       paymentDate: {
         type: Date,
         default: Date.now,
@@ -158,7 +162,7 @@ const loanSchema = new mongoose.Schema(
         default: null,
       },
       paymentProof: {
-        type: String, // File path/URL for payment proof
+        type: String,
         default: null,
       },
       paymentStatus: {
