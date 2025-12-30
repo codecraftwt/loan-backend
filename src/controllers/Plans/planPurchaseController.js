@@ -129,13 +129,6 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
 
     const userId = req.user.id;
 
-    // Log incoming request data for debugging
-    console.log("Payment verification request received:");
-    console.log("Order ID:", razorpay_order_id);
-    console.log("Payment ID:", razorpay_payment_id);
-    console.log("Signature:", razorpay_signature ? `${razorpay_signature.substring(0, 20)}...` : "missing");
-    console.log("Plan ID:", planId);
-
     if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature || !planId) {
       return res.status(400).json({
         success: false,
@@ -177,8 +170,6 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
         } : undefined,
       });
     }
-
-    console.log("Payment signature verified successfully");
 
     // Get plan details
     const plan = await Plan.findById(planId);

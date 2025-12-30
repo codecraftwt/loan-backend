@@ -467,16 +467,13 @@ const verifyOtp = async (req, res) => {
   try {
     // Check if the OTP matches the stored OTP for this email
     if (verificationCodes[email] !== otp) {
-      console.log("INvalid OTP");
       return res.status(400).json({ message: "Invalid verification code" });
     }
 
-    console.log("OTP verified");
     // If OTP is valid, proceed to reset the password.
     res.status(200).json({ message: "OTP verified successfully" });
   } catch (error) {
     console.error(error);
-    console.log("OTP Error", error);
     res.status(500).json({ message: "Server error" });
   }
 };

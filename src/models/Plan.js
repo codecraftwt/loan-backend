@@ -50,7 +50,6 @@ Plan.dropOldNameIndex = async () => {
     const indexes = await Plan.collection.getIndexes();
     if (indexes.name_1) {
       await Plan.collection.dropIndex('name_1');
-      console.log('✓ Dropped old name_1 index from plans collection');
     }
   } catch (err) {
     // Index might not exist or already dropped, ignore error

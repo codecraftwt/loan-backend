@@ -70,8 +70,6 @@ const AddLoan = async (req, res) => {
       });
     }
 
-    console.log(error);
-
     return res.status(500).json({
       message: "Server Error",
       error: error.message,
@@ -139,8 +137,6 @@ const AddLoan = async (req, res) => {
 //         errors: errorMessages,
 //       });
 //     }
-
-//     console.log(error);
 
 //     return res.status(500).json({
 //       message: "Server Error",
@@ -316,8 +312,6 @@ const updateLoanAcceptanceStatus = async (req, res) => {
     // Update the loan status
     loan.borrowerAcceptanceStatus = status;
     await loan.save();
-
-    console.log(loan?.lenderId?._id, "Loan lernder id means loan given by");
 
     // Send notification to lender
     await sendLoanStatusNotification(loan.lenderId, loan.name, status);
@@ -720,8 +714,6 @@ const getRecentActivities = async (req, res) => {
 const checkAndUpdateOverdueLoans = async () => {
   try {
     const currentDate = new Date();
-    console.log(`Checking for overdue loans as of ${currentDate.toISOString()}`);
-
     // Find loans that are past due date and have remaining balance
     const overdueLoans = await Loan.find({
       loanEndDate: { $lt: currentDate },
@@ -730,8 +722,6 @@ const checkAndUpdateOverdueLoans = async () => {
       loanConfirmed: true, // Only confirmed loans
       borrowerAcceptanceStatus: "accepted" // Only accepted loans
     });
-
-    console.log(`Found ${overdueLoans.length} potentially overdue loans`);
 
     let updatedCount = 0;
 
@@ -757,7 +747,6 @@ const checkAndUpdateOverdueLoans = async () => {
           // Send notification to borrower about overdue loan
           try {
             await sendLoanUpdateNotification(loan.aadhaarNumber, loan);
-            console.log(`Overdue notification sent for loan ${loan._id}`);
           } catch (notificationError) {
             console.error(`Failed to send overdue notification for loan ${loan._id}:`, notificationError.message);
           }
@@ -765,14 +754,11 @@ const checkAndUpdateOverdueLoans = async () => {
 
         await loan.save();
         updatedCount++;
-        console.log(`Updated loan ${loan._id} to overdue status (${overdueDays} days overdue)`);
 
       } catch (loanError) {
         console.error(`Error updating loan ${loan._id}:`, loanError.message);
       }
     }
-
-    console.log(`Successfully updated ${updatedCount} loans to overdue status`);
     return { success: true, updatedCount };
 
   } catch (error) {

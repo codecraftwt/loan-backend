@@ -1,6 +1,8 @@
 const User = require("../../models/User");
+const Loan = require("../../models/Loan");
 const cloudinary = require("../../config/cloudinaryConfig");
 const { default: mongoose } = require("mongoose");
+const { sendMobileNumberChangeNotification } = require("../../services/notificationService");
 
 // Update Profile API
 const updateProfile = async (req, res) => {
@@ -14,12 +16,45 @@ const updateProfile = async (req, res) => {
       return res.status(404).json({ message: "User not found." });
     }
 
+    // Store old mobile number if mobile number is being changed
+    const oldMobileNo = user.mobileNo;
+    const mobileNoChanged = mobileNo && mobileNo !== oldMobileNo;
+
     if (userName) user.userName = userName;
     if (email) user.email = email;
     if (mobileNo) user.mobileNo = mobileNo;
     if (address) user.address = address;
 
     await user.save();
+
+    // If mobile number changed and user is a borrower, notify all lenders who have loans with this borrower
+    if (mobileNoChanged && user.roleId === 2 && user.aadharCardNo) {
+      try {
+        // Find all loans for this borrower using their Aadhaar number
+        const loans = await Loan.find({ aadhaarNumber: user.aadharCardNo }).select('lenderId');
+        
+        // Get unique lender IDs
+        const lenderIds = [...new Set(loans.map(loan => loan.lenderId.toString()))];
+
+        // Send notification to each lender
+        const notificationPromises = lenderIds.map(lenderId => {
+          return sendMobileNumberChangeNotification(
+            lenderId,
+            user.userName,
+            oldMobileNo,
+            mobileNo
+          ).catch(error => {
+            console.error(`Error notifying lender ${lenderId}:`, error);
+          });
+        });
+
+        // Wait for all notifications to be sent (non-blocking)
+        await Promise.all(notificationPromises);
+      } catch (notificationError) {
+        // Don't fail the request if notification fails
+        console.error("Error sending mobile number change notifications:", notificationError);
+      }
+    }
 
     return res.status(200).json({
       message: "Profile updated successfully.",
@@ -57,26 +92,21 @@ const uploadProfileImage = async (req, res) => {
       },
       async (error, result) => {
         if (error) {
-          console.log("Error uploading to Cloudinary:", error);
           return res.status(500).json({
             message: "Server error while uploading to Cloudinary",
             error: error.message,
           });
         }
-        console.log("Cloudinary upload result:", result);
         const imageUrl = result.secure_url;
-        console.log("Image URL:", imageUrl);
 
         const user = await User.findById(userId);
         if (!user) {
-          console.log("User not found");
           return res.status(404).json({ message: "User not found." });
         }
 
         user.profileImage = imageUrl;
 
         await user.save();
-        console.log("User profile image updated successfully");
 
         return res.status(200).json({
           message: "Profile image updated successfully.",
@@ -115,7 +145,6 @@ const deleteProfileImage = async (req, res) => {
     const publicId = `Loan_user_profiles/${userId}_profile_image`;
 
     const cloudinaryResult = await cloudinary.uploader.destroy(publicId);
-    console.log("Cloudinary result:", cloudinaryResult);
 
     if (cloudinaryResult.result !== "ok") {
       return res
