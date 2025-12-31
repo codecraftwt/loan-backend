@@ -811,6 +811,228 @@ const getBorrowerLoanStatistics = async (req, res) => {
   }
 };
 
+// Get recent activities for borrower
+const getRecentActivities = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const limit = parseInt(req.query.limit) || 10;
+
+    // Get borrower's Aadhaar number
+    const borrower = await User.findById(userId).select('aadharCardNo');
+    if (!borrower || !borrower.aadharCardNo) {
+      return res.status(404).json({
+        success: false,
+        message: "Borrower profile not found or Aadhaar number missing",
+      });
+    }
+
+    // Helper function to format relative time
+    const getRelativeTime = (timestamp) => {
+      const now = new Date();
+      const past = new Date(timestamp);
+      const diffInSeconds = Math.floor((now - past) / 1000);
+
+      if (diffInSeconds < 60) {
+        return `${diffInSeconds} second${diffInSeconds !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInMinutes = Math.floor(diffInSeconds / 60);
+      if (diffInMinutes < 60) {
+        return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInHours = Math.floor(diffInMinutes / 60);
+      if (diffInHours < 24) {
+        return `${diffInHours} hour${diffInHours !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInDays = Math.floor(diffInHours / 24);
+      if (diffInDays < 30) {
+        return `${diffInDays} day${diffInDays !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInMonths = Math.floor(diffInDays / 30);
+      if (diffInMonths < 12) {
+        return `${diffInMonths} month${diffInMonths !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInYears = Math.floor(diffInMonths / 12);
+      return `${diffInYears} year${diffInYears !== 1 ? 's' : ''} ago`;
+    };
+
+    const activities = [];
+    const now = new Date();
+
+    // 1. Get loans taken by borrower (loans received from lenders)
+    const loansTaken = await Loan.find({ aadhaarNumber: borrower.aadharCardNo })
+      .sort({ createdAt: -1 })
+      .limit(limit * 2)
+      .populate('lenderId', 'userName')
+      .select('name amount lenderId borrowerAcceptanceStatus createdAt')
+      .lean();
+
+    loansTaken.forEach(loan => {
+      const lenderName = loan.lenderId?.userName || 'Lender';
+      activities.push({
+        type: 'loan_received',
+        shortMessage: 'Loan Received',
+        message: `You received a loan of ₹${loan.amount} from ${lenderName}`,
+        loanId: loan._id,
+        loanName: loan.name,
+        lenderName: lenderName,
+        lenderId: loan.lenderId?._id,
+        amount: loan.amount,
+        timestamp: loan.createdAt,
+        relativeTime: getRelativeTime(loan.createdAt)
+      });
+    });
+
+    // 2. Get loans where borrower made payments
+    const loansWithPayments = await Loan.find({ aadhaarNumber: borrower.aadharCardNo })
+      .sort({ updatedAt: -1 })
+      .limit(limit * 3)
+      .populate('lenderId', 'userName')
+      .select('name amount paymentHistory totalPaid paymentStatus lenderId updatedAt')
+      .lean();
+
+    loansWithPayments.forEach(loan => {
+      const lenderName = loan.lenderId?.userName || 'Lender';
+      
+      if (loan.paymentHistory && loan.paymentHistory.length > 0) {
+        // Get most recent payment
+        const recentPayment = loan.paymentHistory[loan.paymentHistory.length - 1];
+        if (recentPayment.paymentStatus === 'confirmed') {
+          activities.push({
+            type: 'payment_made',
+            shortMessage: 'Payment Made',
+            message: `You paid ₹${recentPayment.amount} to ${lenderName}`,
+            loanId: loan._id,
+            loanName: loan.name,
+            lenderName: lenderName,
+            amount: recentPayment.amount,
+            paymentMode: recentPayment.paymentMode,
+            paymentType: recentPayment.paymentType,
+            timestamp: recentPayment.confirmedAt || recentPayment.paymentDate,
+            relativeTime: getRelativeTime(recentPayment.confirmedAt || recentPayment.paymentDate)
+          });
+        }
+      }
+
+      // Check if loan is fully paid
+      if (loan.paymentStatus === 'paid') {
+        activities.push({
+          type: 'loan_paid',
+          shortMessage: 'Loan Fully Paid',
+          message: `You fully paid the loan of ₹${loan.amount} to ${lenderName}`,
+          loanId: loan._id,
+          loanName: loan.name,
+          lenderName: lenderName,
+          amount: loan.amount,
+          timestamp: loan.updatedAt,
+          relativeTime: getRelativeTime(loan.updatedAt)
+        });
+      }
+    });
+
+    // 3. Get overdue loans
+    const overdueLoans = await Loan.find({
+      aadhaarNumber: borrower.aadharCardNo,
+      'overdueDetails.isOverdue': true
+    })
+      .sort({ 'overdueDetails.lastOverdueCheck': -1 })
+      .limit(limit)
+      .populate('lenderId', 'userName')
+      .select('name amount overdueDetails lenderId updatedAt')
+      .lean();
+
+    overdueLoans.forEach(loan => {
+      const lenderName = loan.lenderId?.userName || 'Lender';
+      activities.push({
+        type: 'loan_overdue',
+        shortMessage: 'Loan Overdue',
+        message: `Your loan of ₹${loan.amount} from ${lenderName} is overdue by ${loan.overdueDetails.overdueDays} days`,
+        loanId: loan._id,
+        loanName: loan.name,
+        lenderName: lenderName,
+        amount: loan.amount,
+        overdueAmount: loan.overdueDetails.overdueAmount,
+        overdueDays: loan.overdueDetails.overdueDays,
+        timestamp: loan.overdueDetails.lastOverdueCheck || loan.updatedAt,
+        relativeTime: getRelativeTime(loan.overdueDetails.lastOverdueCheck || loan.updatedAt)
+      });
+    });
+
+    // 4. Get loans accepted/rejected by borrower
+    const loansStatusUpdates = await Loan.find({
+      aadhaarNumber: borrower.aadharCardNo,
+      borrowerAcceptanceStatus: { $in: ['accepted', 'rejected'] }
+    })
+      .sort({ updatedAt: -1 })
+      .limit(limit * 2)
+      .populate('lenderId', 'userName')
+      .select('name amount borrowerAcceptanceStatus lenderId updatedAt')
+      .lean();
+
+    loansStatusUpdates.forEach(loan => {
+      const lenderName = loan.lenderId?.userName || 'Lender';
+      if (loan.borrowerAcceptanceStatus === 'accepted') {
+        activities.push({
+          type: 'loan_accepted',
+          shortMessage: 'Loan Accepted',
+          message: `You accepted loan of ₹${loan.amount} from ${lenderName}`,
+          loanId: loan._id,
+          loanName: loan.name,
+          lenderName: lenderName,
+          amount: loan.amount,
+          timestamp: loan.updatedAt,
+          relativeTime: getRelativeTime(loan.updatedAt)
+        });
+      } else if (loan.borrowerAcceptanceStatus === 'rejected') {
+        activities.push({
+          type: 'loan_rejected',
+          shortMessage: 'Loan Rejected',
+          message: `You rejected loan of ₹${loan.amount} from ${lenderName}`,
+          loanId: loan._id,
+          loanName: loan.name,
+          lenderName: lenderName,
+          amount: loan.amount,
+          timestamp: loan.updatedAt,
+          relativeTime: getRelativeTime(loan.updatedAt)
+        });
+      }
+    });
+
+    // Sort all activities by timestamp (most recent first)
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Remove duplicates and take only the most recent ones
+    const uniqueActivities = [];
+    const seenKeys = new Set();
+    
+    for (const activity of activities) {
+      const key = `${activity.type}_${activity.loanId}_${activity.timestamp}`;
+      if (!seenKeys.has(key) && uniqueActivities.length < limit) {
+        seenKeys.add(key);
+        uniqueActivities.push(activity);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Recent activities fetched successfully",
+      count: uniqueActivities.length,
+      data: uniqueActivities,
+    });
+  } catch (error) {
+    console.error("Error fetching recent activities:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getLoanByAadhaar,
   updateLoanAcceptanceStatus,
@@ -818,6 +1040,7 @@ module.exports = {
   getPaymentHistory,
   getMyLoans,
   getBorrowerLoanStatistics,
+  getRecentActivities,
 };
 
 

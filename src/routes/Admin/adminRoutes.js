@@ -7,7 +7,10 @@ const {
   editPlan, 
   getAllPlans, 
   getActivePlans, 
-  getPlanById 
+  getPlanById,
+  getLendersWithPlans,
+  getAdminRevenue,
+  getRecentActivities
 } = require("../../controllers/Admin/adminController");
 
 const router = express.Router();
@@ -22,5 +25,14 @@ router.patch("/plans/:id", authenticateUser, checkAdmin, editPlan); // Support P
 router.get("/plans/active", authenticateUser, checkAdminOrLender, getActivePlans); // Get all active plans
 router.get("/plans", authenticateUser, checkAdminOrLender, getAllPlans); // Get all plans (including inactive)
 router.get("/plans/:id", authenticateUser, checkAdminOrLender, getPlanById); // Get single plan by ID
+
+// Admin only routes - Lenders with plans
+router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans); // Get all lenders with plan purchase details
+
+// Admin only routes - Revenue statistics
+router.get("/revenue", authenticateUser, checkAdmin, getAdminRevenue); // Get admin revenue statistics
+
+// Admin only routes - Recent activities
+router.get("/recent-activities", authenticateUser, checkAdmin, getRecentActivities); // Get admin recent activities
 
 module.exports = router;

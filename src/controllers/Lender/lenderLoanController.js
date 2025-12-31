@@ -492,8 +492,8 @@ const getLoanStats = async (req, res) => {
 // Get recent activities for lender
 const getRecentActivities = async (req, res) => {
   try {
-    const userId = req.user.id; // Get the logged-in user ID
-    const limit = parseInt(req.query.limit) || 5; // Default to 5 activities
+    const userId = req.user.id;
+    const limit = parseInt(req.query.limit) || 10;
 
     // Helper function to format relative time
     const getRelativeTime = (timestamp) => {
@@ -529,54 +529,61 @@ const getRecentActivities = async (req, res) => {
       return `${diffInYears} year${diffInYears !== 1 ? 's' : ''} ago`;
     };
 
-    // 1. Get user's loans as lender (loans given) - get all and sort by most recent updates
-    const loansGiven = await Loan.find({ lenderId: userId })
-      .sort({ updatedAt: -1 })
-      .limit(limit * 2) // Get more to filter
-      .select('name amount paymentStatus borrowerAcceptanceStatus updatedAt')
+    const activities = [];
+    const now = new Date();
+
+    // 1. Get loans created by lender (sorted by creation)
+    const loansCreated = await Loan.find({ lenderId: userId })
+      .sort({ createdAt: -1 })
+      .limit(limit * 2)
+      .select('name amount borrowerAcceptanceStatus createdAt')
       .lean();
 
-    // 2. Get user's loans as borrower (loans taken) using aadhaarNumber
-    const user = await User.findById(userId).select('aadharCardNo');
-    const loansTaken = user?.aadharCardNo ?
-      await Loan.find({ aadhaarNumber: user.aadharCardNo })
-        .sort({ updatedAt: -1 })
-        .limit(limit * 2) // Get more to filter
-        .select('name amount status borrowerAcceptanceStatus updatedAt lenderId')
-        .populate('lenderId', 'userName')
-        .lean() : [];
+    loansCreated.forEach(loan => {
+      activities.push({
+        type: 'loan_created',
+        shortMessage: 'Loan Created',
+        message: `You created a loan of ₹${loan.amount} for ${loan.name}`,
+        loanId: loan._id,
+        loanName: loan.name,
+        amount: loan.amount,
+        timestamp: loan.createdAt,
+        relativeTime: getRelativeTime(loan.createdAt)
+      });
+    });
 
-    // Format activities
-    const activities = [];
+    // 2. Get loans with payment updates (payment received)
+    const loansWithPayments = await Loan.find({ lenderId: userId })
+      .sort({ updatedAt: -1 })
+      .limit(limit * 3)
+      .select('name amount paymentStatus paymentHistory totalPaid updatedAt')
+      .lean();
 
-    // Format loans given activities
-    loansGiven.forEach(loan => {
-      let shortMessage = '';
-      let message = '';
-
-      if (loan.paymentStatus === 'paid') {
-        shortMessage = 'Loan Repaid';
-        message = `Loan of ₹${loan.amount} given to ${loan.name} has been marked as paid`;
-      } else if (loan.borrowerAcceptanceStatus === 'accepted') {
-        shortMessage = 'Loan Accepted';
-        message = `${loan.name} accepted your loan of ₹${loan.amount}`;
-      } else if (loan.borrowerAcceptanceStatus === 'rejected') {
-        shortMessage = 'Loan Rejected';
-        message = `${loan.name} rejected your loan of ₹${loan.amount}`;
-      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
-        shortMessage = 'Loan Given';
-        message = `You gave a loan of ₹${loan.amount} to ${loan.name}`;
-      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
-        shortMessage = 'Loan Active';
-        message = `Loan of ₹${loan.amount} to ${loan.name} is active`;
+    loansWithPayments.forEach(loan => {
+      if (loan.paymentHistory && loan.paymentHistory.length > 0) {
+        // Get most recent payment
+        const recentPayment = loan.paymentHistory[loan.paymentHistory.length - 1];
+        if (recentPayment.paymentStatus === 'confirmed') {
+          activities.push({
+            type: 'payment_received',
+            shortMessage: 'Payment Received',
+            message: `You received ₹${recentPayment.amount} payment from ${loan.name}`,
+            loanId: loan._id,
+            loanName: loan.name,
+            amount: recentPayment.amount,
+            paymentMode: recentPayment.paymentMode,
+            timestamp: recentPayment.confirmedAt || recentPayment.paymentDate,
+            relativeTime: getRelativeTime(recentPayment.confirmedAt || recentPayment.paymentDate)
+          });
+        }
       }
 
-      // Only add if we have a message
-      if (shortMessage && message) {
+      // Check if loan is fully paid
+      if (loan.paymentStatus === 'paid') {
         activities.push({
-          type: 'loan_given',
-          shortMessage,
-          message,
+          type: 'loan_paid',
+          shortMessage: 'Loan Fully Paid',
+          message: `Loan of ₹${loan.amount} to ${loan.name} has been fully paid`,
           loanId: loan._id,
           loanName: loan.name,
           amount: loan.amount,
@@ -586,36 +593,58 @@ const getRecentActivities = async (req, res) => {
       }
     });
 
-    // Format loans taken activities
-    loansTaken.forEach(loan => {
-      let shortMessage = '';
-      let message = '';
+    // 3. Get overdue loans
+    const overdueLoans = await Loan.find({
+      lenderId: userId,
+      'overdueDetails.isOverdue': true
+    })
+      .sort({ 'overdueDetails.lastOverdueCheck': -1 })
+      .limit(limit)
+      .select('name amount overdueDetails updatedAt')
+      .lean();
 
-      const lenderName = loan.lenderId?.userName || 'Lender';
+    overdueLoans.forEach(loan => {
+      activities.push({
+        type: 'loan_overdue',
+        shortMessage: 'Loan Overdue',
+        message: `Loan of ₹${loan.amount} to ${loan.name} is overdue by ${loan.overdueDetails.overdueDays} days`,
+        loanId: loan._id,
+        loanName: loan.name,
+        amount: loan.amount,
+        overdueAmount: loan.overdueDetails.overdueAmount,
+        overdueDays: loan.overdueDetails.overdueDays,
+        timestamp: loan.overdueDetails.lastOverdueCheck || loan.updatedAt,
+        relativeTime: getRelativeTime(loan.overdueDetails.lastOverdueCheck || loan.updatedAt)
+      });
+    });
 
-      if (loan.paymentStatus === 'paid') {
-        shortMessage = 'Loan Paid';
-        message = `You paid ₹${loan.amount} to ${lenderName}`;
-      } else if (loan.borrowerAcceptanceStatus === 'accepted') {
-        shortMessage = 'Loan Accepted';
-        message = `You accepted loan of ₹${loan.amount} from ${lenderName}`;
-      } else if (loan.borrowerAcceptanceStatus === 'rejected') {
-        shortMessage = 'Loan Rejected';
-        message = `You rejected loan of ₹${loan.amount} from ${lenderName}`;
-      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
-        shortMessage = 'Loan Requested';
-        message = `You requested a loan of ₹${loan.amount} from ${lenderName}`;
-      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
-        shortMessage = 'Loan Active';
-        message = `Your loan of ₹${loan.amount} from ${lenderName} is active`;
-      }
+    // 4. Get loans accepted/rejected by borrowers
+    const loansStatusUpdates = await Loan.find({
+      lenderId: userId,
+      borrowerAcceptanceStatus: { $in: ['accepted', 'rejected'] }
+    })
+      .sort({ updatedAt: -1 })
+      .limit(limit * 2)
+      .select('name amount borrowerAcceptanceStatus updatedAt')
+      .lean();
 
-      // Only add if we have a message
-      if (shortMessage && message) {
+    loansStatusUpdates.forEach(loan => {
+      if (loan.borrowerAcceptanceStatus === 'accepted') {
         activities.push({
-          type: 'loan_taken',
-          shortMessage,
-          message,
+          type: 'loan_accepted',
+          shortMessage: 'Loan Accepted',
+          message: `${loan.name} accepted your loan of ₹${loan.amount}`,
+          loanId: loan._id,
+          loanName: loan.name,
+          amount: loan.amount,
+          timestamp: loan.updatedAt,
+          relativeTime: getRelativeTime(loan.updatedAt)
+        });
+      } else if (loan.borrowerAcceptanceStatus === 'rejected') {
+        activities.push({
+          type: 'loan_rejected',
+          shortMessage: 'Loan Rejected',
+          message: `${loan.name} rejected your loan of ₹${loan.amount}`,
           loanId: loan._id,
           loanName: loan.name,
           amount: loan.amount,
@@ -628,17 +657,28 @@ const getRecentActivities = async (req, res) => {
     // Sort all activities by timestamp (most recent first)
     activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-    // Take only the most recent ones based on limit
-    const recentActivities = activities.slice(0, limit);
+    // Remove duplicates and take only the most recent ones
+    const uniqueActivities = [];
+    const seenLoanIds = new Set();
+    
+    for (const activity of activities) {
+      const key = `${activity.type}_${activity.loanId}_${activity.timestamp}`;
+      if (!seenLoanIds.has(key) && uniqueActivities.length < limit) {
+        seenLoanIds.add(key);
+        uniqueActivities.push(activity);
+      }
+    }
 
     return res.status(200).json({
+      success: true,
       message: "Recent activities fetched successfully",
-      count: recentActivities.length,
-      data: recentActivities,
+      count: uniqueActivities.length,
+      data: uniqueActivities,
     });
   } catch (error) {
     console.error("Error fetching recent activities:", error);
     return res.status(500).json({
+      success: false,
       message: "Server error. Please try again later.",
       error: error.message,
     });

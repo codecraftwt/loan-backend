@@ -6,6 +6,7 @@ const {
   getPaymentHistory,
   getMyLoans,
   getBorrowerLoanStatistics,
+  getRecentActivities,
 } = require("../../controllers/Borrower/borrowerLoanController");
 const multer = require("multer");
 const path = require("path");
@@ -48,6 +49,9 @@ const router = express.Router();
 
 // Get borrower loan statistics with percentages (for dashboard/graph)
 router.get('/statistics', authenticateUser, checkBorrower, getBorrowerLoanStatistics);
+
+// Get recent activities for borrower
+router.get('/recent-activities', authenticateUser, checkBorrower, getRecentActivities);
 
 // Get borrower's loans by borrower ID (no authentication required)
 router.get("/my-loans", getMyLoans);
