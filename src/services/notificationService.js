@@ -184,7 +184,6 @@ async function sendFraudAlertNotification(lenderId, fraudDetails, borrowerName, 
         // Handle invalid tokens
         if (error.code === 'messaging/invalid-registration-token' || 
             error.code === 'messaging/registration-token-not-registered') {
-          console.log(`Removing invalid token: ${token}`);
         }
       });
     });
@@ -192,7 +191,6 @@ async function sendFraudAlertNotification(lenderId, fraudDetails, borrowerName, 
     // Wait for all notifications to be sent
     await Promise.all(promises);
 
-    console.log(`Fraud alert notification sent to lender ${lender.email}`);
   } catch (error) {
     console.error("Error sending fraud alert notification:", error);
   }

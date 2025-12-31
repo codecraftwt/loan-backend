@@ -1,8 +1,9 @@
 const User = require("../../models/User");
 const Loan = require("../../models/Loan");
 const cloudinary = require("../../config/cloudinaryConfig");
-const { default: mongoose } = require("mongoose");
+// const { default: mongoose } = require("mongoose");
 const { sendMobileNumberChangeNotification } = require("../../services/notificationService");
+const { normalizeIndianMobile } = require("../../utils/authHelpers");
 
 // Update Profile API
 const updateProfile = async (req, res) => {
@@ -18,11 +19,24 @@ const updateProfile = async (req, res) => {
 
     // Store old mobile number if mobile number is being changed
     const oldMobileNo = user.mobileNo;
-    const mobileNoChanged = mobileNo && mobileNo !== oldMobileNo;
+    
+    // Normalize mobile number if provided
+    let normalizedMobileNo = null;
+    if (mobileNo) {
+      const normalizedMobile = normalizeIndianMobile(mobileNo);
+      if (!normalizedMobile) {
+        return res.status(400).json({
+          message: "Please provide a valid Indian mobile number",
+        });
+      }
+      normalizedMobileNo = normalizedMobile.e164; // Format: +91XXXXXXXXXX
+    }
+    
+    const mobileNoChanged = normalizedMobileNo && normalizedMobileNo !== oldMobileNo;
 
     if (userName) user.userName = userName;
     if (email) user.email = email;
-    if (mobileNo) user.mobileNo = mobileNo;
+    if (normalizedMobileNo) user.mobileNo = normalizedMobileNo;
     if (address) user.address = address;
 
     await user.save();
@@ -42,7 +56,7 @@ const updateProfile = async (req, res) => {
             lenderId,
             user.userName,
             oldMobileNo,
-            mobileNo
+            normalizedMobileNo
           ).catch(error => {
             console.error(`Error notifying lender ${lenderId}:`, error);
           });

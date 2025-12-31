@@ -25,9 +25,7 @@ cron.schedule('0 9-18 * * *', async () => {
 
 // Cron job to check and update fraud status for all borrowers (daily at 10 AM)
 cron.schedule('0 10 * * *', async () => {
-    try {
-        // console.log('Starting fraud detection cron job...');
-        
+    try {        
         // Get all borrowers
         const borrowers = await User.find({ roleId: 2, isActive: true });
         
