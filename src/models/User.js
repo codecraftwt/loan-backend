@@ -93,7 +93,35 @@ const userSchema = new mongoose.Schema(
     razorpaySignature: {
       type: String,
       required: false,
-    }
+    },
+    // Fraud detection fields (for borrowers)
+    fraudDetection: {
+      fraudScore: {
+        type: Number,
+        default: 0,
+      },
+      riskLevel: {
+        type: String,
+        enum: ["low", "medium", "high", "critical"],
+        default: "low",
+      },
+      flags: {
+        multipleLoansInShortTime: { type: Boolean, default: false },
+        hasPendingLoans: { type: Boolean, default: false },
+        hasOverdueLoans: { type: Boolean, default: false },
+        totalActiveLoans: { type: Number, default: 0 },
+        totalPendingLoans: { type: Number, default: 0 },
+        totalOverdueLoans: { type: Number, default: 0 },
+        lastFraudCheck: { type: Date, default: Date.now },
+      },
+      fraudHistory: [{
+        detectedAt: { type: Date, default: Date.now },
+        fraudScore: { type: Number },
+        riskLevel: { type: String },
+        reason: { type: String },
+        details: { type: mongoose.Schema.Types.Mixed },
+      }],
+    },
   },
   { timestamps: true }
 );

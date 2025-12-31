@@ -654,12 +654,170 @@ const getPaymentHistory = async (req, res) => {
   }
 };
 
+// Get borrower loan statistics with percentages for dashboard/graph
+const getBorrowerLoanStatistics = async (req, res) => {
+  try {
+    const borrowerId = req.user.id;
+
+    // Get borrower's Aadhaar number
+    const borrower = await User.findById(borrowerId).select('aadharCardNo');
+    if (!borrower || !borrower.aadharCardNo) {
+      return res.status(404).json({
+        success: false,
+        message: "Borrower profile not found or Aadhaar number missing",
+      });
+    }
+
+    // Get all loans for this borrower (where borrower has accepted)
+    const loans = await Loan.find({ 
+      aadhaarNumber: borrower.aadharCardNo,
+      borrowerAcceptanceStatus: "accepted"
+    }).lean();
+
+    if (!loans || loans.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: "No loans found for this borrower",
+        data: {
+          totalLoanAmount: 0,
+          totalPaidAmount: 0,
+          totalOverdueAmount: 0,
+          totalPendingAmount: 0,
+          percentages: {
+            totalLoanAmountPercentage: 0,
+            paidPercentage: 0,
+            overduePercentage: 0,
+            pendingPercentage: 0,
+          },
+          counts: {
+            totalLoans: 0,
+            paidLoans: 0,
+            overdueLoans: 0,
+            pendingLoans: 0,
+          },
+        },
+      });
+    }
+
+    // Calculate totals
+    let totalLoanAmount = 0;
+    let totalPaidAmount = 0;
+    let totalOverdueAmount = 0;
+    let totalPendingAmount = 0;
+
+    // Count loans by status
+    let paidLoansCount = 0;
+    let overdueLoansCount = 0;
+    let pendingLoansCount = 0;
+
+    loans.forEach((loan) => {
+      // Add to total loan amount
+      totalLoanAmount += loan.amount || 0;
+
+      // Calculate paid amount (from totalPaid field)
+      const paidAmount = loan.totalPaid || 0;
+      totalPaidAmount += paidAmount;
+
+      // Check if loan is overdue
+      const currentDate = new Date();
+      const loanEndDate = loan.loanEndDate ? new Date(loan.loanEndDate) : null;
+      const remainingAmount = loan.remainingAmount || 0;
+      const isLoanConfirmed = loan.loanConfirmed === true || loan.otpVerified === "verified";
+      const isAccepted = loan.borrowerAcceptanceStatus === "accepted";
+      
+      const isOverdue = 
+        loan.paymentStatus === "overdue" || 
+        (loan.overdueDetails && loan.overdueDetails.isOverdue === true) ||
+        (
+          loanEndDate && 
+          loanEndDate < currentDate && 
+          remainingAmount > 0 && 
+          loan.paymentStatus !== "paid" &&
+          isLoanConfirmed &&
+          isAccepted
+        );
+
+      if (isOverdue) {
+        // Use overdueAmount if available, otherwise use remainingAmount
+        const overdueAmount = loan.overdueDetails?.overdueAmount || remainingAmount || 0;
+        totalOverdueAmount += overdueAmount > 0 ? overdueAmount : 0;
+        overdueLoansCount++;
+      }
+
+      // Check if loan is pending (not paid and not overdue)
+      const isPending = 
+        (loan.paymentStatus === "pending" || loan.paymentStatus === "part paid") &&
+        !isOverdue &&
+        (loan.remainingAmount > 0 || (loan.totalPaid || 0) < (loan.amount || 0));
+
+      if (isPending) {
+        const pendingAmount = loan.remainingAmount || ((loan.amount || 0) - (loan.totalPaid || 0));
+        totalPendingAmount += pendingAmount > 0 ? pendingAmount : 0;
+        pendingLoansCount++;
+      }
+
+      // Count paid loans (fully paid)
+      if (loan.paymentStatus === "paid" || (loan.remainingAmount === 0 && (loan.totalPaid || 0) >= (loan.amount || 0))) {
+        paidLoansCount++;
+      }
+    });
+
+    // Calculate percentages (based on total loan amount)
+    const totalLoanAmountPercentage = 100.00; // Total loan amount is always 100% (base reference)
+    const paidPercentage = totalLoanAmount > 0 
+      ? parseFloat(((totalPaidAmount / totalLoanAmount) * 100).toFixed(2))
+      : 0;
+    
+    const overduePercentage = totalLoanAmount > 0
+      ? parseFloat(((totalOverdueAmount / totalLoanAmount) * 100).toFixed(2))
+      : 0;
+    
+    const pendingPercentage = totalLoanAmount > 0
+      ? parseFloat(((totalPendingAmount / totalLoanAmount) * 100).toFixed(2))
+      : 0;
+
+    // Prepare response data
+    const responseData = {
+      totalLoanAmount: parseFloat(totalLoanAmount.toFixed(2)),
+      totalPaidAmount: parseFloat(totalPaidAmount.toFixed(2)),
+      totalOverdueAmount: parseFloat(totalOverdueAmount.toFixed(2)),
+      totalPendingAmount: parseFloat(totalPendingAmount.toFixed(2)),
+      percentages: {
+        totalLoanAmountPercentage,
+        paidPercentage,
+        overduePercentage,
+        pendingPercentage,
+      },
+      counts: {
+        totalLoans: loans.length,
+        paidLoans: paidLoansCount,
+        overdueLoans: overdueLoansCount,
+        pendingLoans: pendingLoansCount,
+      },
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Borrower loan statistics fetched successfully",
+      data: responseData,
+    });
+  } catch (error) {
+    console.error("Error fetching borrower loan statistics:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getLoanByAadhaar,
   updateLoanAcceptanceStatus,
   makeLoanPayment,
   getPaymentHistory,
   getMyLoans,
+  getBorrowerLoanStatistics,
 };
 
 

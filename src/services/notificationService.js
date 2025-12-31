@@ -133,4 +133,74 @@ async function sendMobileNumberChangeNotification(lenderId, borrowerName, oldMob
   }
 }
 
-module.exports = { sendLoanStatusNotification, sendLoanUpdateNotification, sendMobileNumberChangeNotification };
+async function sendFraudAlertNotification(lenderId, fraudDetails, borrowerName, loanId = null) {
+  try {
+    // Find the lender by lenderId to get the device tokens
+    const lender = await User.findById(lenderId);
+    if (!lender || !lender.deviceTokens || lender.deviceTokens.length === 0) {
+      return;
+    }
+
+    const notificationId = `${lender.userName}_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+
+    // Determine notification title and body based on risk level
+    let title, body;
+    
+    if (fraudDetails.riskLevel === "critical") {
+      title = "CRITICAL: Fraud Alert";
+      body = `Borrower ${borrowerName} has been flagged as CRITICAL RISK. ${fraudDetails.totalOverdueLoans || 0} overdue loans, ${fraudDetails.totalUnpaidLoans || 0} unpaid loans. Immediate action required.`;
+    } else if (fraudDetails.riskLevel === "high") {
+      title = "High Risk Fraud Alert";
+      body = `Borrower ${borrowerName} has been flagged for HIGH RISK. Fraud Score: ${fraudDetails.fraudScore}. Review immediately.`;
+    } else if (fraudDetails.riskLevel === "medium") {
+      title = "Fraud Alert - Medium Risk";
+      body = `Borrower ${borrowerName} has been flagged for MEDIUM RISK. Fraud Score: ${fraudDetails.fraudScore}. Proceed with caution.`;
+    } else {
+      title = "Fraud Warning";
+      body = `Borrower ${borrowerName} has some fraud indicators. Fraud Score: ${fraudDetails.fraudScore}.`;
+    }
+
+    // Prepare the notification message
+    const message = {
+      notification: {
+        title: title,
+        body: body,
+      },
+      data: {
+        screen: loanId ? "LoanDetails" : "CreateLoan",
+        notificationId: notificationId,
+        type: "fraud_alert",
+        fraudScore: fraudDetails.fraudScore.toString(),
+        riskLevel: fraudDetails.riskLevel,
+        borrowerName: borrowerName,
+        ...(loanId && { loanId: loanId.toString() }),
+      },
+    };
+
+    // Send the notification to all device tokens
+    const promises = lender.deviceTokens.map((token) => {
+      return messaging.send({ ...message, token }).catch((error) => {
+        console.error(`Error sending notification to token ${token}:`, error);
+        // Handle invalid tokens
+        if (error.code === 'messaging/invalid-registration-token' || 
+            error.code === 'messaging/registration-token-not-registered') {
+          console.log(`Removing invalid token: ${token}`);
+        }
+      });
+    });
+
+    // Wait for all notifications to be sent
+    await Promise.all(promises);
+
+    console.log(`Fraud alert notification sent to lender ${lender.email}`);
+  } catch (error) {
+    console.error("Error sending fraud alert notification:", error);
+  }
+}
+
+module.exports = { 
+  sendLoanStatusNotification, 
+  sendLoanUpdateNotification, 
+  sendMobileNumberChangeNotification,
+  sendFraudAlertNotification 
+};

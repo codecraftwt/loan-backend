@@ -3,9 +3,11 @@ const User = require("../../models/User");
 const {
   sendLoanStatusNotification,
   sendLoanUpdateNotification,
+  sendFraudAlertNotification,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
 const { generateLoanAgreement } = require("../../services/agreementService");
+const { getFraudDetails, updateBorrowerFraudStatus } = require("../../services/fraudDetectionService");
 
 const createLoan = async (req, res) => {
   try {
@@ -62,6 +64,32 @@ const createLoan = async (req, res) => {
       });
     }
 
+    // Check for fraud before creating loan
+    let fraudDetails = null;
+    try {
+      fraudDetails = await getFraudDetails(LoanData.aadharCardNo);
+      
+      // Update borrower fraud status
+      await updateBorrowerFraudStatus(borrower._id, LoanData.aadharCardNo);
+      
+      // Send fraud alert notification if medium risk or higher
+      if (fraudDetails.riskLevel !== "low") {
+        await sendFraudAlertNotification(
+          lenderId,
+          {
+            fraudScore: fraudDetails.fraudScore,
+            riskLevel: fraudDetails.riskLevel,
+            totalOverdueLoans: fraudDetails.flags.totalOverdueLoans,
+            totalPendingLoans: fraudDetails.flags.totalPendingLoans,
+          },
+          LoanData.name
+        ).catch(err => console.error("Error sending fraud alert:", err));
+      }
+    } catch (fraudError) {
+      console.error("Error checking fraud:", fraudError);
+      // Continue with loan creation even if fraud check fails
+    }
+
     // Verify loan belongs to the authenticated lender
     // (This check is implicit since lenderId comes from req.user.id)
 
@@ -77,7 +105,7 @@ const createLoan = async (req, res) => {
       address: LoanData.address,
       amount: LoanData.amount,
       purpose: LoanData.purpose,
-      loanGivenDate: new Date(LoanData.loanGivenDate),
+      loanStartDate: new Date(LoanData.loanGivenDate), // Set loanStartDate from loanGivenDate
       loanEndDate: new Date(LoanData.loanEndDate),
       loanMode: LoanData.loanMode,
       lenderId,
@@ -102,7 +130,7 @@ const createLoan = async (req, res) => {
     const populatedLoan = await Loan.findById(newLoan._id)
       .populate('lenderId', 'userName email mobileNo profileImage');
 
-    return res.status(201).json({
+    const response = {
       success: true,
       message: "Loan created successfully. OTP sent to borrower's mobile number.",
       data: {
@@ -110,7 +138,29 @@ const createLoan = async (req, res) => {
         otp: otp, // Return OTP in response for testing (remove in production)
         otpMessage: "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
       },
-    });
+    };
+
+    // Add fraud warning if detected
+    if (fraudDetails && fraudDetails.riskLevel !== "low") {
+      response.warning = {
+        fraudDetected: true,
+        fraudScore: fraudDetails.fraudScore,
+        riskLevel: fraudDetails.riskLevel,
+        details: {
+          activeLoans: fraudDetails.flags.totalActiveLoans,
+          pendingLoans: fraudDetails.flags.totalPendingLoans,
+          overdueLoans: fraudDetails.flags.totalOverdueLoans,
+          loansInLast30Days: fraudDetails.details.multipleLoans.loansIn30Days,
+          totalPendingAmount: fraudDetails.details.pendingLoans.amount,
+          totalOverdueAmount: fraudDetails.details.overdueLoans.amount,
+          maxOverdueDays: fraudDetails.details.overdueLoans.maxOverdueDays,
+        },
+        recommendation: fraudDetails.recommendation,
+      };
+      response.message += " Warning: Fraud risk detected for this borrower.";
+    }
+
+    return res.status(201).json(response);
   } catch (error) {
     if (error.name === "ValidationError") {
       const errorMessages = Object.values(error.errors).map(
@@ -1148,6 +1198,56 @@ const getLenderLoanStatistics = async (req, res) => {
   }
 };
 
+// Check borrower fraud status before creating loan
+const checkBorrowerFraud = async (req, res) => {
+  try {
+    const { aadhaarNumber } = req.params;
+
+    if (!aadhaarNumber || aadhaarNumber.length !== 12) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid Aadhaar number (12 digits) is required",
+      });
+    }
+
+    // Get fraud details
+    const fraudDetails = await getFraudDetails(aadhaarNumber);
+
+    // Update borrower fraud status
+    const borrower = await User.findOne({ aadharCardNo: aadhaarNumber, roleId: 2 });
+    if (borrower) {
+      await updateBorrowerFraudStatus(borrower._id, aadhaarNumber);
+    }
+
+    return res.status(200).json({
+      success: true,
+      fraudScore: fraudDetails.fraudScore,
+      riskLevel: fraudDetails.riskLevel,
+      flags: fraudDetails.flags,
+      details: {
+        totalActiveLoans: fraudDetails.flags.totalActiveLoans,
+        loansInLast30Days: fraudDetails.details.multipleLoans.loansIn30Days,
+        loansInLast90Days: fraudDetails.details.multipleLoans.loansIn90Days,
+        loansInLast180Days: fraudDetails.details.multipleLoans.loansIn180Days,
+        pendingLoansCount: fraudDetails.details.pendingLoans.count,
+        pendingLoansAmount: fraudDetails.details.pendingLoans.amount,
+        overdueLoansCount: fraudDetails.details.overdueLoans.count,
+        overdueLoansAmount: fraudDetails.details.overdueLoans.amount,
+        maxOverdueDays: fraudDetails.details.overdueLoans.maxOverdueDays,
+        averageOverdueDays: fraudDetails.details.overdueLoans.maxOverdueDays, // Can be calculated if needed
+      },
+      recommendation: fraudDetails.recommendation,
+    });
+  } catch (error) {
+    console.error("Error checking borrower fraud:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server Error",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createLoan,
   AddLoan: createLoan, // Keep for backward compatibility
@@ -1165,5 +1265,6 @@ module.exports = {
   rejectPayment,
   getPendingPayments,
   getLenderLoanStatistics,
+  checkBorrowerFraud,
 };
 
