@@ -148,7 +148,7 @@ async function sendFraudAlertNotification(lenderId, fraudDetails, borrowerName, 
     
     if (fraudDetails.riskLevel === "critical") {
       title = "CRITICAL: Fraud Alert";
-      body = `Borrower ${borrowerName} has been flagged as CRITICAL RISK. ${fraudDetails.totalOverdueLoans || 0} overdue loans, ${fraudDetails.totalUnpaidLoans || 0} unpaid loans. Immediate action required.`;
+      body = `Borrower ${borrowerName} has been flagged as CRITICAL RISK. ${fraudDetails.totalOverdueLoans || 0} overdue loans, ${fraudDetails.totalPendingLoans || 0} pending loans. Immediate action required.`;
     } else if (fraudDetails.riskLevel === "high") {
       title = "High Risk Fraud Alert";
       body = `Borrower ${borrowerName} has been flagged for HIGH RISK. Fraud Score: ${fraudDetails.fraudScore}. Review immediately.`;
