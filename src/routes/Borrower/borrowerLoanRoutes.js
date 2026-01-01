@@ -7,6 +7,8 @@ const {
   getMyLoans,
   getBorrowerLoanStatistics,
   getRecentActivities,
+  createLoanRepaymentOrder,
+  verifyRazorpayPaymentAndRepay,
 } = require("../../controllers/Borrower/borrowerLoanController");
 const multer = require("multer");
 const path = require("path");
@@ -67,13 +69,29 @@ router.patch(
   updateLoanAcceptanceStatus
 );
 
-// Make loan payment (borrower pays loan)
+// Make loan payment (borrower pays loan) - for cash payments
 router.post(
   "/payment/:loanId",
   authenticateUser,
   checkBorrower,
   uploadPaymentProof.single("paymentProof"),
   makeLoanPayment
+);
+
+// Create Razorpay order for loan repayment (online payment)
+router.post(
+  "/payment/:loanId/razorpay/order",
+  authenticateUser,
+  checkBorrower,
+  createLoanRepaymentOrder
+);
+
+// Verify Razorpay payment and process loan repayment (online payment)
+router.post(
+  "/payment/:loanId/razorpay/verify",
+  authenticateUser,
+  checkBorrower,
+  verifyRazorpayPaymentAndRepay
 );
 
 // Get payment history for a loan (no authentication required)
