@@ -208,7 +208,7 @@ const makeLoanPayment = async (req, res) => {
     }
 
     // Find the loan
-    const loan = await Loan.findById(loanId);
+    const loan = await Loan.findById(loanId).populate("lenderId", "userName email mobileNo");
     if (!loan) {
       return res.status(404).json({ message: "Loan not found" });
     }
@@ -225,6 +225,24 @@ const makeLoanPayment = async (req, res) => {
     if (loan.paymentStatus === "paid") {
       return res.status(400).json({
         message: "This loan is already fully paid",
+      });
+    }
+
+    // Check if there's already a pending payment for this loan
+    const pendingPayment = loan.paymentHistory.find(
+      p => p.paymentStatus === "pending"
+    );
+
+    if (pendingPayment) {
+      return res.status(400).json({
+        message: "You have a pending payment request. Please wait for lender to confirm or reject the previous payment before making a new payment.",
+        pendingPayment: {
+          amount: pendingPayment.amount,
+          paymentMode: pendingPayment.paymentMode,
+          paymentType: pendingPayment.paymentType,
+          paymentDate: pendingPayment.paymentDate,
+          installmentNumber: pendingPayment.installmentNumber || null,
+        },
       });
     }
 
@@ -1084,6 +1102,24 @@ const createLoanRepaymentOrder = async (req, res) => {
       });
     }
 
+    // Check if there's already a pending payment for this loan
+    const pendingPayment = loan.paymentHistory.find(
+      p => p.paymentStatus === "pending"
+    );
+
+    if (pendingPayment) {
+      return res.status(400).json({
+        message: "You have a pending payment request. Please wait for lender to confirm or reject the previous payment before making a new payment.",
+        pendingPayment: {
+          amount: pendingPayment.amount,
+          paymentMode: pendingPayment.paymentMode,
+          paymentType: pendingPayment.paymentType,
+          paymentDate: pendingPayment.paymentDate,
+          installmentNumber: pendingPayment.installmentNumber || null,
+        },
+      });
+    }
+
     // Validate payment amount doesn't exceed remaining amount
     const remainingAmount = loan.remainingAmount || loan.amount;
     if (Number(amount) > remainingAmount) {
@@ -1233,6 +1269,24 @@ const verifyRazorpayPaymentAndRepay = async (req, res) => {
     if (loan.paymentStatus === "paid") {
       return res.status(400).json({
         message: "This loan is already fully paid",
+      });
+    }
+
+    // Check if there's already a pending payment for this loan
+    const pendingPayment = loan.paymentHistory.find(
+      p => p.paymentStatus === "pending"
+    );
+
+    if (pendingPayment) {
+      return res.status(400).json({
+        message: "You have a pending payment request. Please wait for lender to confirm or reject the previous payment before making a new payment.",
+        pendingPayment: {
+          amount: pendingPayment.amount,
+          paymentMode: pendingPayment.paymentMode,
+          paymentType: pendingPayment.paymentType,
+          paymentDate: pendingPayment.paymentDate,
+          installmentNumber: pendingPayment.installmentNumber || null,
+        },
       });
     }
 
