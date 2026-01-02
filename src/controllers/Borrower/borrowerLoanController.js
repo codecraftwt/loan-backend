@@ -3,6 +3,7 @@ const User = require("../../models/User");
 const {
   sendLoanStatusNotification,
   sendLoanUpdateNotification,
+  sendPendingPaymentNotificationToLender,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
 const razorpayInstance = require("../../config/razorpay.config");
@@ -319,6 +320,22 @@ const makeLoanPayment = async (req, res) => {
 
     // Set payment confirmation status instead of sending notification
     loan.paymentConfirmation = "pending";
+
+    // Send notification to lender about pending payment
+    try {
+      const borrower = await User.findById(borrowerId);
+      const borrowerName = borrower?.userName || "Borrower";
+      await sendPendingPaymentNotificationToLender(
+        loan.lenderId,
+        loan,
+        borrowerName,
+        Number(amount),
+        paymentMode
+      );
+    } catch (notificationError) {
+      console.error("Error sending pending payment notification:", notificationError);
+      // Don't fail the request if notification fails
+    }
 
     // Calculate what totals would be after confirmation (for display only)
     const currentTotalPaid = Number(loan.totalPaid) || 0;
@@ -1348,11 +1365,20 @@ const verifyRazorpayPaymentAndRepay = async (req, res) => {
     await loan.save();
 
     // Send notification to lender about pending payment
-    await sendLoanUpdateNotification(
-      loan.lenderId._id,
-      loan.name,
-      `Online payment of ₹${paymentAmount} received via Razorpay. Please confirm the payment.`
-    );
+    try {
+      const borrower = await User.findById(borrowerId);
+      const borrowerName = borrower?.userName || "Borrower";
+      await sendPendingPaymentNotificationToLender(
+        loan.lenderId._id,
+        loan,
+        borrowerName,
+        paymentAmount,
+        "online"
+      );
+    } catch (notificationError) {
+      console.error("Error sending pending payment notification:", notificationError);
+      // Don't fail the request if notification fails
+    }
 
     // Calculate what totals would be after confirmation (for display only)
     const currentTotalPaid = Number(loan.totalPaid) || 0;

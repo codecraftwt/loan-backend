@@ -3,7 +3,16 @@ const { checkAndUpdateOverdueLoans } = require('../controllers/Loans/LoansContro
 const { updateBorrowerFraudStatus } = require('../services/fraudDetectionService');
 const User = require('../models/User');
 const Loan = require('../models/Loan');
-const { sendFraudAlertNotification } = require('../services/notificationService');
+const Plan = require('../models/Plan');
+const { 
+  sendFraudAlertNotification,
+  sendOverdueLoanNotificationToLender,
+  sendOverdueLoanNotificationToBorrower,
+  sendPendingPaymentNotificationToLender,
+  sendPendingLoanNotificationToLender,
+  sendPendingLoanNotificationToBorrower,
+  sendSubscriptionReminderNotification
+} = require('../services/notificationService');
 
 // Cron job to check for overdue loans every day at 9 AM
 cron.schedule('0 9 * * *', async () => {
@@ -88,5 +97,198 @@ cron.schedule('0 10 * * *', async () => {
         // console.log(`Fraud detection cron job completed. Updated: ${updatedCount}, Notified: ${notifiedCount}`);
     } catch (error) {
         console.error('Error in fraud detection cron job:', error);
+    }
+});
+
+// Cron job to send overdue loan notifications (daily at 10 AM)
+cron.schedule('0 10 * * *', async () => {
+    try {
+        const currentDate = new Date();
+        const overdueLoans = await Loan.find({
+            'overdueDetails.isOverdue': true,
+            paymentStatus: { $ne: 'paid' },
+            loanConfirmed: true,
+            borrowerAcceptanceStatus: 'accepted'
+        })
+        .populate('lenderId', 'userName')
+        .lean();
+
+        let lenderNotifiedCount = 0;
+        let borrowerNotifiedCount = 0;
+
+        for (const loan of overdueLoans) {
+            try {
+                // Get borrower details
+                const borrower = await User.findOne({ aadharCardNo: loan.aadhaarNumber });
+                const lenderName = loan.lenderId?.userName || 'Lender';
+                const borrowerName = borrower?.userName || 'Borrower';
+
+                // Send notification to lender
+                if (loan.lenderId) {
+                    await sendOverdueLoanNotificationToLender(
+                        loan.lenderId._id,
+                        loan,
+                        borrowerName
+                    );
+                    lenderNotifiedCount++;
+                }
+
+                // Send notification to borrower
+                if (borrower) {
+                    await sendOverdueLoanNotificationToBorrower(
+                        loan.aadhaarNumber,
+                        loan,
+                        lenderName
+                    );
+                    borrowerNotifiedCount++;
+                }
+            } catch (loanError) {
+                console.error(`Error sending overdue notifications for loan ${loan._id}:`, loanError);
+            }
+        }
+
+        console.log(`Overdue loan notifications sent. Lenders: ${lenderNotifiedCount}, Borrowers: ${borrowerNotifiedCount}`);
+    } catch (error) {
+        console.error('Error in overdue loan notification cron job:', error);
+    }
+});
+
+// Cron job to send pending payment notifications to lenders (daily at 11 AM)
+cron.schedule('0 11 * * *', async () => {
+    try {
+        const loansWithPendingPayments = await Loan.find({
+            'paymentHistory.paymentStatus': 'pending',
+            loanConfirmed: true,
+            borrowerAcceptanceStatus: 'accepted'
+        })
+        .populate('lenderId', 'userName')
+        .lean();
+
+        let notifiedCount = 0;
+
+        for (const loan of loansWithPendingPayments) {
+            try {
+                // Find pending payments
+                const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
+                
+                if (pendingPayments.length > 0 && loan.lenderId) {
+                    // Get the most recent pending payment
+                    const latestPendingPayment = pendingPayments[pendingPayments.length - 1];
+                    
+                    // Get borrower details
+                    const borrower = await User.findOne({ aadharCardNo: loan.aadhaarNumber });
+                    const borrowerName = borrower?.userName || 'Borrower';
+
+                    // Send notification to lender
+                    await sendPendingPaymentNotificationToLender(
+                        loan.lenderId._id,
+                        loan,
+                        borrowerName,
+                        latestPendingPayment.amount,
+                        latestPendingPayment.paymentMode
+                    );
+                    notifiedCount++;
+                }
+            } catch (loanError) {
+                console.error(`Error sending pending payment notification for loan ${loan._id}:`, loanError);
+            }
+        }
+
+        console.log(`Pending payment notifications sent to ${notifiedCount} lenders`);
+    } catch (error) {
+        console.error('Error in pending payment notification cron job:', error);
+    }
+});
+
+// Cron job to send pending loan notifications (daily at 12 PM)
+cron.schedule('0 12 * * *', async () => {
+    try {
+        // Loans waiting for borrower acceptance
+        const pendingLoans = await Loan.find({
+            borrowerAcceptanceStatus: 'pending',
+            loanConfirmed: false
+        })
+        .populate('lenderId', 'userName')
+        .lean();
+
+        let lenderNotifiedCount = 0;
+        let borrowerNotifiedCount = 0;
+
+        for (const loan of pendingLoans) {
+            try {
+                const borrower = await User.findOne({ aadharCardNo: loan.aadhaarNumber });
+                const lenderName = loan.lenderId?.userName || 'Lender';
+                const borrowerName = borrower?.userName || 'Borrower';
+
+                // Notify lender
+                if (loan.lenderId) {
+                    await sendPendingLoanNotificationToLender(
+                        loan.lenderId._id,
+                        loan,
+                        borrowerName
+                    );
+                    lenderNotifiedCount++;
+                }
+
+                // Notify borrower
+                if (borrower) {
+                    await sendPendingLoanNotificationToBorrower(
+                        loan.aadhaarNumber,
+                        loan,
+                        lenderName
+                    );
+                    borrowerNotifiedCount++;
+                }
+            } catch (loanError) {
+                console.error(`Error sending pending loan notification for loan ${loan._id}:`, loanError);
+            }
+        }
+
+        console.log(`Pending loan notifications sent. Lenders: ${lenderNotifiedCount}, Borrowers: ${borrowerNotifiedCount}`);
+    } catch (error) {
+        console.error('Error in pending loan notification cron job:', error);
+    }
+});
+
+// Cron job to send subscription reminders (daily at 9 AM)
+cron.schedule('0 9 * * *', async () => {
+    try {
+        const currentDate = new Date();
+        const lenders = await User.find({
+            roleId: 1, // Lenders only
+            isActive: true,
+            currentPlanId: { $exists: true, $ne: null },
+            planExpiryDate: { $exists: true, $ne: null }
+        })
+        .populate('currentPlanId')
+        .lean();
+
+        let notifiedCount = 0;
+
+        for (const lender of lenders) {
+            try {
+                if (!lender.planExpiryDate || !lender.currentPlanId) continue;
+
+                const expiryDate = new Date(lender.planExpiryDate);
+                const remainingDays = Math.ceil((expiryDate - currentDate) / (1000 * 60 * 60 * 24));
+
+                // Send reminders at: 7 days, 3 days, 1 day, and on expiry day
+                if (remainingDays === 7 || remainingDays === 3 || remainingDays === 1 || remainingDays === 0) {
+                    await sendSubscriptionReminderNotification(
+                        lender._id,
+                        lender.currentPlanId.planName || 'Subscription',
+                        remainingDays,
+                        expiryDate
+                    );
+                    notifiedCount++;
+                }
+            } catch (lenderError) {
+                console.error(`Error sending subscription reminder to lender ${lender._id}:`, lenderError);
+            }
+        }
+
+        console.log(`Subscription reminder notifications sent to ${notifiedCount} lenders`);
+    } catch (error) {
+        console.error('Error in subscription reminder cron job:', error);
     }
 });

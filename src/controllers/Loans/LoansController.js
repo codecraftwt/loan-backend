@@ -3,6 +3,8 @@ const User = require("../../models/User");
 const {
   sendLoanStatusNotification,
   sendLoanUpdateNotification,
+  sendOverdueLoanNotificationToLender,
+  sendOverdueLoanNotificationToBorrower,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
 
@@ -744,9 +746,26 @@ const checkAndUpdateOverdueLoans = async () => {
         if (shouldNotify) {
           loan.overdueDetails.overdueNotified = true;
 
-          // Send notification to borrower about overdue loan
+          // Send notifications to both lender and borrower about overdue loan
           try {
-            await sendLoanUpdateNotification(loan.aadhaarNumber, loan);
+            // Populate lender if not already populated
+            if (!loan.lenderId || typeof loan.lenderId === 'string') {
+              await loan.populate('lenderId', 'userName');
+            }
+            
+            const lenderName = loan.lenderId?.userName || 'Lender';
+            const borrower = await User.findOne({ aadharCardNo: loan.aadhaarNumber });
+            const borrowerName = borrower?.userName || 'Borrower';
+
+            // Send to lender
+            if (loan.lenderId && loan.lenderId._id) {
+              await sendOverdueLoanNotificationToLender(loan.lenderId._id, loan, borrowerName);
+            }
+
+            // Send to borrower
+            if (borrower) {
+              await sendOverdueLoanNotificationToBorrower(loan.aadhaarNumber, loan, lenderName);
+            }
           } catch (notificationError) {
             console.error(`Failed to send overdue notification for loan ${loan._id}:`, notificationError.message);
           }

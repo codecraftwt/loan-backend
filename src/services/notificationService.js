@@ -196,9 +196,278 @@ async function sendFraudAlertNotification(lenderId, fraudDetails, borrowerName, 
   }
 }
 
+// Send overdue loan notification to lender
+async function sendOverdueLoanNotificationToLender(lenderId, loan, borrowerName) {
+  try {
+    const lender = await User.findById(lenderId);
+    if (!lender || !lender.deviceTokens || lender.deviceTokens.length === 0) {
+      return;
+    }
+
+    const notificationId = `${lender.userName}_overdue_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+    const overdueDays = loan.overdueDetails?.overdueDays || 0;
+    const overdueAmount = loan.overdueDetails?.overdueAmount || loan.remainingAmount || 0;
+
+    const message = {
+      notification: {
+        title: "Overdue Loan Alert",
+        body: `Loan from ${borrowerName} is overdue by ${overdueDays} day${overdueDays !== 1 ? 's' : ''}. Amount: ₹${overdueAmount}`,
+      },
+      data: {
+        screen: "LoanDetails",
+        notificationId: notificationId,
+        type: "overdue_loan",
+        loanId: loan._id.toString(),
+        borrowerName: borrowerName,
+        overdueDays: overdueDays.toString(),
+        overdueAmount: overdueAmount.toString(),
+      },
+    };
+
+    const promises = lender.deviceTokens.map((token) => {
+      return messaging.send({ ...message, token }).catch((error) => {
+        console.error(`Error sending overdue notification to lender ${token}:`, error);
+        if (error.code === 'messaging/invalid-registration-token' || 
+            error.code === 'messaging/registration-token-not-registered') {
+        }
+      });
+    });
+
+    await Promise.all(promises);
+  } catch (error) {
+    console.error("Error sending overdue loan notification to lender:", error);
+  }
+}
+
+// Send overdue loan notification to borrower
+async function sendOverdueLoanNotificationToBorrower(borrowerAadhaar, loan, lenderName) {
+  try {
+    const borrower = await User.findOne({ aadharCardNo: borrowerAadhaar });
+    if (!borrower || !borrower.deviceTokens || borrower.deviceTokens.length === 0) {
+      return;
+    }
+
+    const notificationId = `${borrower.userName}_overdue_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+    const overdueDays = loan.overdueDetails?.overdueDays || 0;
+    const overdueAmount = loan.overdueDetails?.overdueAmount || loan.remainingAmount || 0;
+
+    const message = {
+      notification: {
+        title: "Loan Overdue Reminder",
+        body: `Your loan to ${lenderName} is overdue by ${overdueDays} day${overdueDays !== 1 ? 's' : ''}. Please pay ₹${overdueAmount} to avoid further issues.`,
+      },
+      data: {
+        screen: "LoanDetails",
+        notificationId: notificationId,
+        type: "overdue_loan",
+        loanId: loan._id.toString(),
+        lenderName: lenderName,
+        overdueDays: overdueDays.toString(),
+        overdueAmount: overdueAmount.toString(),
+      },
+    };
+
+    const promises = borrower.deviceTokens.map((token) => {
+      return messaging.send({ ...message, token }).catch((error) => {
+        console.error(`Error sending overdue notification to borrower ${token}:`, error);
+        if (error.code === 'messaging/invalid-registration-token' || 
+            error.code === 'messaging/registration-token-not-registered') {
+        }
+      });
+    });
+
+    await Promise.all(promises);
+  } catch (error) {
+    console.error("Error sending overdue loan notification to borrower:", error);
+  }
+}
+
+// Send pending payment notification to lender
+async function sendPendingPaymentNotificationToLender(lenderId, loan, borrowerName, paymentAmount, paymentMode) {
+  try {
+    const lender = await User.findById(lenderId);
+    if (!lender || !lender.deviceTokens || lender.deviceTokens.length === 0) {
+      return;
+    }
+
+    const notificationId = `${lender.userName}_pending_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+    const paymentModeText = paymentMode === "online" ? "online (Razorpay)" : "cash";
+
+    const message = {
+      notification: {
+        title: "Pending Payment Request",
+        body: `${borrowerName} has submitted a payment of ₹${paymentAmount} via ${paymentModeText}. Please confirm or reject.`,
+      },
+      data: {
+        screen: "LoanDetails",
+        notificationId: notificationId,
+        type: "pending_payment",
+        loanId: loan._id.toString(),
+        borrowerName: borrowerName,
+        paymentAmount: paymentAmount.toString(),
+        paymentMode: paymentMode,
+      },
+    };
+
+    const promises = lender.deviceTokens.map((token) => {
+      return messaging.send({ ...message, token }).catch((error) => {
+        console.error(`Error sending pending payment notification to lender ${token}:`, error);
+        if (error.code === 'messaging/invalid-registration-token' || 
+            error.code === 'messaging/registration-token-not-registered') {
+        }
+      });
+    });
+
+    await Promise.all(promises);
+  } catch (error) {
+    console.error("Error sending pending payment notification to lender:", error);
+  }
+}
+
+// Send pending loan notification to lender (loans waiting for borrower acceptance)
+async function sendPendingLoanNotificationToLender(lenderId, loan, borrowerName) {
+  try {
+    const lender = await User.findById(lenderId);
+    if (!lender || !lender.deviceTokens || lender.deviceTokens.length === 0) {
+      return;
+    }
+
+    const notificationId = `${lender.userName}_pending_loan_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+
+    const message = {
+      notification: {
+        title: "Pending Loan Acceptance",
+        body: `Loan of ₹${loan.amount} to ${borrowerName} is waiting for borrower acceptance.`,
+      },
+      data: {
+        screen: "LoanDetails",
+        notificationId: notificationId,
+        type: "pending_loan",
+        loanId: loan._id.toString(),
+        borrowerName: borrowerName,
+        loanAmount: loan.amount.toString(),
+      },
+    };
+
+    const promises = lender.deviceTokens.map((token) => {
+      return messaging.send({ ...message, token }).catch((error) => {
+        console.error(`Error sending pending loan notification to lender ${token}:`, error);
+        if (error.code === 'messaging/invalid-registration-token' || 
+            error.code === 'messaging/registration-token-not-registered') {
+        }
+      });
+    });
+
+    await Promise.all(promises);
+  } catch (error) {
+    console.error("Error sending pending loan notification to lender:", error);
+  }
+}
+
+// Send pending loan notification to borrower (loans waiting for acceptance)
+async function sendPendingLoanNotificationToBorrower(borrowerAadhaar, loan, lenderName) {
+  try {
+    const borrower = await User.findOne({ aadharCardNo: borrowerAadhaar });
+    if (!borrower || !borrower.deviceTokens || borrower.deviceTokens.length === 0) {
+      return;
+    }
+
+    const notificationId = `${borrower.userName}_pending_loan_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+
+    const message = {
+      notification: {
+        title: "New Loan Offer",
+        body: `${lenderName} has offered you a loan of ₹${loan.amount}. Please accept or reject.`,
+      },
+      data: {
+        screen: "LoanDetails",
+        notificationId: notificationId,
+        type: "pending_loan",
+        loanId: loan._id.toString(),
+        lenderName: lenderName,
+        loanAmount: loan.amount.toString(),
+      },
+    };
+
+    const promises = borrower.deviceTokens.map((token) => {
+      return messaging.send({ ...message, token }).catch((error) => {
+        console.error(`Error sending pending loan notification to borrower ${token}:`, error);
+        if (error.code === 'messaging/invalid-registration-token' || 
+            error.code === 'messaging/registration-token-not-registered') {
+        }
+      });
+    });
+
+    await Promise.all(promises);
+  } catch (error) {
+    console.error("Error sending pending loan notification to borrower:", error);
+  }
+}
+
+// Send subscription reminder notification to lender
+async function sendSubscriptionReminderNotification(lenderId, planName, remainingDays, expiryDate) {
+  try {
+    const lender = await User.findById(lenderId);
+    if (!lender || !lender.deviceTokens || lender.deviceTokens.length === 0) {
+      return;
+    }
+
+    const notificationId = `${lender.userName}_subscription_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+
+    let title, body;
+    if (remainingDays === 0) {
+      title = "Subscription Expired";
+      body = `Your ${planName} subscription has expired today. Please renew to continue using the platform.`;
+    } else if (remainingDays <= 3) {
+      title = "Subscription Expiring Soon";
+      body = `Your ${planName} subscription expires in ${remainingDays} day${remainingDays !== 1 ? 's' : ''}. Please renew to avoid service interruption.`;
+    } else if (remainingDays <= 7) {
+      title = "Subscription Reminder";
+      body = `Your ${planName} subscription expires in ${remainingDays} days. Consider renewing soon.`;
+    } else {
+      title = "Subscription Reminder";
+      body = `Your ${planName} subscription expires in ${remainingDays} days.`;
+    }
+
+    const message = {
+      notification: {
+        title: title,
+        body: body,
+      },
+      data: {
+        screen: "Subscription",
+        notificationId: notificationId,
+        type: "subscription_reminder",
+        planName: planName,
+        remainingDays: remainingDays.toString(),
+        expiryDate: expiryDate.toISOString(),
+      },
+    };
+
+    const promises = lender.deviceTokens.map((token) => {
+      return messaging.send({ ...message, token }).catch((error) => {
+        console.error(`Error sending subscription reminder to lender ${token}:`, error);
+        if (error.code === 'messaging/invalid-registration-token' || 
+            error.code === 'messaging/registration-token-not-registered') {
+        }
+      });
+    });
+
+    await Promise.all(promises);
+  } catch (error) {
+    console.error("Error sending subscription reminder notification:", error);
+  }
+}
+
 module.exports = { 
   sendLoanStatusNotification, 
   sendLoanUpdateNotification, 
   sendMobileNumberChangeNotification,
-  sendFraudAlertNotification 
+  sendFraudAlertNotification,
+  sendOverdueLoanNotificationToLender,
+  sendOverdueLoanNotificationToBorrower,
+  sendPendingPaymentNotificationToLender,
+  sendPendingLoanNotificationToLender,
+  sendPendingLoanNotificationToBorrower,
+  sendSubscriptionReminderNotification
 };
