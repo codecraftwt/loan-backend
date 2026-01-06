@@ -14,7 +14,6 @@ const {
   rejectPayment,
   getPendingPayments,
   getLenderLoanStatistics,
-  checkBorrowerFraud,
 } = require("../../controllers/Lender/lenderLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
@@ -27,9 +26,6 @@ router.get('/recent-activities', authenticateUser, checkLender, getRecentActivit
 
 // Get lender loan statistics with percentages (for dashboard/graph)
 router.get('/statistics', authenticateUser, checkLender, getLenderLoanStatistics);
-
-// Check borrower fraud status before creating loan
-router.get('/check-fraud/:aadhaarNumber', authenticateUser, checkLender, checkBorrowerFraud);
 
 // Create loan (only lenders can create loans for borrowers) - requires active plan
 router.post("/create", authenticateUser, checkLender, checkActivePlan, createLoan);

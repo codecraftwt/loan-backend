@@ -1,4 +1,3 @@
-// src/models/Plan.js
 const mongoose = require('mongoose');
 
 const planSchema = new mongoose.Schema({

@@ -3,11 +3,9 @@ const User = require("../../models/User");
 const {
   sendLoanStatusNotification,
   sendLoanUpdateNotification,
-  sendFraudAlertNotification,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
 const { generateLoanAgreement } = require("../../services/agreementService");
-const { getFraudDetails, updateBorrowerFraudStatus } = require("../../services/fraudDetectionService");
 
 const createLoan = async (req, res) => {
   try {
@@ -64,32 +62,6 @@ const createLoan = async (req, res) => {
       });
     }
 
-    // Check for fraud before creating loan
-    let fraudDetails = null;
-    try {
-      fraudDetails = await getFraudDetails(LoanData.aadharCardNo);
-      
-      // Update borrower fraud status
-      await updateBorrowerFraudStatus(borrower._id, LoanData.aadharCardNo);
-      
-      // Send fraud alert notification if medium risk or higher
-      if (fraudDetails.riskLevel !== "low") {
-        await sendFraudAlertNotification(
-          lenderId,
-          {
-            fraudScore: fraudDetails.fraudScore,
-            riskLevel: fraudDetails.riskLevel,
-            totalOverdueLoans: fraudDetails.flags.totalOverdueLoans,
-            totalPendingLoans: fraudDetails.flags.totalPendingLoans,
-          },
-          LoanData.name
-        ).catch(err => console.error("Error sending fraud alert:", err));
-      }
-    } catch (fraudError) {
-      console.error("Error checking fraud:", fraudError);
-      // Continue with loan creation even if fraud check fails
-    }
-
     // Verify loan belongs to the authenticated lender
     // (This check is implicit since lenderId comes from req.user.id)
 
@@ -105,7 +77,7 @@ const createLoan = async (req, res) => {
       address: LoanData.address,
       amount: LoanData.amount,
       purpose: LoanData.purpose,
-      loanStartDate: new Date(LoanData.loanGivenDate), // Set loanStartDate from loanGivenDate
+      loanGivenDate: new Date(LoanData.loanGivenDate),
       loanEndDate: new Date(LoanData.loanEndDate),
       loanMode: LoanData.loanMode,
       lenderId,
@@ -130,7 +102,7 @@ const createLoan = async (req, res) => {
     const populatedLoan = await Loan.findById(newLoan._id)
       .populate('lenderId', 'userName email mobileNo profileImage');
 
-    const response = {
+    return res.status(201).json({
       success: true,
       message: "Loan created successfully. OTP sent to borrower's mobile number.",
       data: {
@@ -138,29 +110,7 @@ const createLoan = async (req, res) => {
         otp: otp, // Return OTP in response for testing (remove in production)
         otpMessage: "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
       },
-    };
-
-    // Add fraud warning if detected
-    if (fraudDetails && fraudDetails.riskLevel !== "low") {
-      response.warning = {
-        fraudDetected: true,
-        fraudScore: fraudDetails.fraudScore,
-        riskLevel: fraudDetails.riskLevel,
-        details: {
-          activeLoans: fraudDetails.flags.totalActiveLoans,
-          pendingLoans: fraudDetails.flags.totalPendingLoans,
-          overdueLoans: fraudDetails.flags.totalOverdueLoans,
-          loansInLast30Days: fraudDetails.details.multipleLoans.loansIn30Days,
-          totalPendingAmount: fraudDetails.details.pendingLoans.amount,
-          totalOverdueAmount: fraudDetails.details.overdueLoans.amount,
-          maxOverdueDays: fraudDetails.details.overdueLoans.maxOverdueDays,
-        },
-        recommendation: fraudDetails.recommendation,
-      };
-      response.message += " Warning: Fraud risk detected for this borrower.";
-    }
-
-    return res.status(201).json(response);
+    });
   } catch (error) {
     if (error.name === "ValidationError") {
       const errorMessages = Object.values(error.errors).map(
@@ -492,8 +442,8 @@ const getLoanStats = async (req, res) => {
 // Get recent activities for lender
 const getRecentActivities = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const limit = parseInt(req.query.limit) || 10;
+    const userId = req.user.id; // Get the logged-in user ID
+    const limit = parseInt(req.query.limit) || 5; // Default to 5 activities
 
     // Helper function to format relative time
     const getRelativeTime = (timestamp) => {
@@ -529,61 +479,54 @@ const getRecentActivities = async (req, res) => {
       return `${diffInYears} year${diffInYears !== 1 ? 's' : ''} ago`;
     };
 
+    // 1. Get user's loans as lender (loans given) - get all and sort by most recent updates
+    const loansGiven = await Loan.find({ lenderId: userId })
+      .sort({ updatedAt: -1 })
+      .limit(limit * 2) // Get more to filter
+      .select('name amount paymentStatus borrowerAcceptanceStatus updatedAt')
+      .lean();
+
+    // 2. Get user's loans as borrower (loans taken) using aadhaarNumber
+    const user = await User.findById(userId).select('aadharCardNo');
+    const loansTaken = user?.aadharCardNo ?
+      await Loan.find({ aadhaarNumber: user.aadharCardNo })
+        .sort({ updatedAt: -1 })
+        .limit(limit * 2) // Get more to filter
+        .select('name amount status borrowerAcceptanceStatus updatedAt lenderId')
+        .populate('lenderId', 'userName')
+        .lean() : [];
+
+    // Format activities
     const activities = [];
-    const now = new Date();
 
-    // 1. Get loans created by lender (sorted by creation)
-    const loansCreated = await Loan.find({ lenderId: userId })
-      .sort({ createdAt: -1 })
-      .limit(limit * 2)
-      .select('name amount borrowerAcceptanceStatus createdAt')
-      .lean();
+    // Format loans given activities
+    loansGiven.forEach(loan => {
+      let shortMessage = '';
+      let message = '';
 
-    loansCreated.forEach(loan => {
-      activities.push({
-        type: 'loan_created',
-        shortMessage: 'Loan Created',
-        message: `You created a loan of ₹${loan.amount} for ${loan.name}`,
-        loanId: loan._id,
-        loanName: loan.name,
-        amount: loan.amount,
-        timestamp: loan.createdAt,
-        relativeTime: getRelativeTime(loan.createdAt)
-      });
-    });
-
-    // 2. Get loans with payment updates (payment received)
-    const loansWithPayments = await Loan.find({ lenderId: userId })
-      .sort({ updatedAt: -1 })
-      .limit(limit * 3)
-      .select('name amount paymentStatus paymentHistory totalPaid updatedAt')
-      .lean();
-
-    loansWithPayments.forEach(loan => {
-      if (loan.paymentHistory && loan.paymentHistory.length > 0) {
-        // Get most recent payment
-        const recentPayment = loan.paymentHistory[loan.paymentHistory.length - 1];
-        if (recentPayment.paymentStatus === 'confirmed') {
-          activities.push({
-            type: 'payment_received',
-            shortMessage: 'Payment Received',
-            message: `You received ₹${recentPayment.amount} payment from ${loan.name}`,
-            loanId: loan._id,
-            loanName: loan.name,
-            amount: recentPayment.amount,
-            paymentMode: recentPayment.paymentMode,
-            timestamp: recentPayment.confirmedAt || recentPayment.paymentDate,
-            relativeTime: getRelativeTime(recentPayment.confirmedAt || recentPayment.paymentDate)
-          });
-        }
-      }
-
-      // Check if loan is fully paid
       if (loan.paymentStatus === 'paid') {
+        shortMessage = 'Loan Repaid';
+        message = `Loan of ₹${loan.amount} given to ${loan.name} has been marked as paid`;
+      } else if (loan.borrowerAcceptanceStatus === 'accepted') {
+        shortMessage = 'Loan Accepted';
+        message = `${loan.name} accepted your loan of ₹${loan.amount}`;
+      } else if (loan.borrowerAcceptanceStatus === 'rejected') {
+        shortMessage = 'Loan Rejected';
+        message = `${loan.name} rejected your loan of ₹${loan.amount}`;
+      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
+        shortMessage = 'Loan Given';
+        message = `You gave a loan of ₹${loan.amount} to ${loan.name}`;
+      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
+        shortMessage = 'Loan Active';
+        message = `Loan of ₹${loan.amount} to ${loan.name} is active`;
+      }
+
+      // Only add if we have a message
+      if (shortMessage && message) {
         activities.push({
-          type: 'loan_paid',
-          shortMessage: 'Loan Fully Paid',
-          message: `Loan of ₹${loan.amount} to ${loan.name} has been fully paid`,
+          type: 'loan_given',
+          shortMessage,
+          message,
           loanId: loan._id,
           loanName: loan.name,
           amount: loan.amount,
@@ -593,58 +536,36 @@ const getRecentActivities = async (req, res) => {
       }
     });
 
-    // 3. Get overdue loans
-    const overdueLoans = await Loan.find({
-      lenderId: userId,
-      'overdueDetails.isOverdue': true
-    })
-      .sort({ 'overdueDetails.lastOverdueCheck': -1 })
-      .limit(limit)
-      .select('name amount overdueDetails updatedAt')
-      .lean();
+    // Format loans taken activities
+    loansTaken.forEach(loan => {
+      let shortMessage = '';
+      let message = '';
 
-    overdueLoans.forEach(loan => {
-      activities.push({
-        type: 'loan_overdue',
-        shortMessage: 'Loan Overdue',
-        message: `Loan of ₹${loan.amount} to ${loan.name} is overdue by ${loan.overdueDetails.overdueDays} days`,
-        loanId: loan._id,
-        loanName: loan.name,
-        amount: loan.amount,
-        overdueAmount: loan.overdueDetails.overdueAmount,
-        overdueDays: loan.overdueDetails.overdueDays,
-        timestamp: loan.overdueDetails.lastOverdueCheck || loan.updatedAt,
-        relativeTime: getRelativeTime(loan.overdueDetails.lastOverdueCheck || loan.updatedAt)
-      });
-    });
+      const lenderName = loan.lenderId?.userName || 'Lender';
 
-    // 4. Get loans accepted/rejected by borrowers
-    const loansStatusUpdates = await Loan.find({
-      lenderId: userId,
-      borrowerAcceptanceStatus: { $in: ['accepted', 'rejected'] }
-    })
-      .sort({ updatedAt: -1 })
-      .limit(limit * 2)
-      .select('name amount borrowerAcceptanceStatus updatedAt')
-      .lean();
-
-    loansStatusUpdates.forEach(loan => {
-      if (loan.borrowerAcceptanceStatus === 'accepted') {
-        activities.push({
-          type: 'loan_accepted',
-          shortMessage: 'Loan Accepted',
-          message: `${loan.name} accepted your loan of ₹${loan.amount}`,
-          loanId: loan._id,
-          loanName: loan.name,
-          amount: loan.amount,
-          timestamp: loan.updatedAt,
-          relativeTime: getRelativeTime(loan.updatedAt)
-        });
+      if (loan.paymentStatus === 'paid') {
+        shortMessage = 'Loan Paid';
+        message = `You paid ₹${loan.amount} to ${lenderName}`;
+      } else if (loan.borrowerAcceptanceStatus === 'accepted') {
+        shortMessage = 'Loan Accepted';
+        message = `You accepted loan of ₹${loan.amount} from ${lenderName}`;
       } else if (loan.borrowerAcceptanceStatus === 'rejected') {
+        shortMessage = 'Loan Rejected';
+        message = `You rejected loan of ₹${loan.amount} from ${lenderName}`;
+      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
+        shortMessage = 'Loan Requested';
+        message = `You requested a loan of ₹${loan.amount} from ${lenderName}`;
+      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
+        shortMessage = 'Loan Active';
+        message = `Your loan of ₹${loan.amount} from ${lenderName} is active`;
+      }
+
+      // Only add if we have a message
+      if (shortMessage && message) {
         activities.push({
-          type: 'loan_rejected',
-          shortMessage: 'Loan Rejected',
-          message: `${loan.name} rejected your loan of ₹${loan.amount}`,
+          type: 'loan_taken',
+          shortMessage,
+          message,
           loanId: loan._id,
           loanName: loan.name,
           amount: loan.amount,
@@ -657,28 +578,17 @@ const getRecentActivities = async (req, res) => {
     // Sort all activities by timestamp (most recent first)
     activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-    // Remove duplicates and take only the most recent ones
-    const uniqueActivities = [];
-    const seenLoanIds = new Set();
-    
-    for (const activity of activities) {
-      const key = `${activity.type}_${activity.loanId}_${activity.timestamp}`;
-      if (!seenLoanIds.has(key) && uniqueActivities.length < limit) {
-        seenLoanIds.add(key);
-        uniqueActivities.push(activity);
-      }
-    }
+    // Take only the most recent ones based on limit
+    const recentActivities = activities.slice(0, limit);
 
     return res.status(200).json({
-      success: true,
       message: "Recent activities fetched successfully",
-      count: uniqueActivities.length,
-      data: uniqueActivities,
+      count: recentActivities.length,
+      data: recentActivities,
     });
   } catch (error) {
     console.error("Error fetching recent activities:", error);
     return res.status(500).json({
-      success: false,
       message: "Server error. Please try again later.",
       error: error.message,
     });
@@ -1238,56 +1148,6 @@ const getLenderLoanStatistics = async (req, res) => {
   }
 };
 
-// Check borrower fraud status before creating loan
-const checkBorrowerFraud = async (req, res) => {
-  try {
-    const { aadhaarNumber } = req.params;
-
-    if (!aadhaarNumber || aadhaarNumber.length !== 12) {
-      return res.status(400).json({
-        success: false,
-        message: "Valid Aadhaar number (12 digits) is required",
-      });
-    }
-
-    // Get fraud details
-    const fraudDetails = await getFraudDetails(aadhaarNumber);
-
-    // Update borrower fraud status
-    const borrower = await User.findOne({ aadharCardNo: aadhaarNumber, roleId: 2 });
-    if (borrower) {
-      await updateBorrowerFraudStatus(borrower._id, aadhaarNumber);
-    }
-
-    return res.status(200).json({
-      success: true,
-      fraudScore: fraudDetails.fraudScore,
-      riskLevel: fraudDetails.riskLevel,
-      flags: fraudDetails.flags,
-      details: {
-        totalActiveLoans: fraudDetails.flags.totalActiveLoans,
-        loansInLast30Days: fraudDetails.details.multipleLoans.loansIn30Days,
-        loansInLast90Days: fraudDetails.details.multipleLoans.loansIn90Days,
-        loansInLast180Days: fraudDetails.details.multipleLoans.loansIn180Days,
-        pendingLoansCount: fraudDetails.details.pendingLoans.count,
-        pendingLoansAmount: fraudDetails.details.pendingLoans.amount,
-        overdueLoansCount: fraudDetails.details.overdueLoans.count,
-        overdueLoansAmount: fraudDetails.details.overdueLoans.amount,
-        maxOverdueDays: fraudDetails.details.overdueLoans.maxOverdueDays,
-        averageOverdueDays: fraudDetails.details.overdueLoans.maxOverdueDays, // Can be calculated if needed
-      },
-      recommendation: fraudDetails.recommendation,
-    });
-  } catch (error) {
-    console.error("Error checking borrower fraud:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Server Error",
-      error: error.message,
-    });
-  }
-};
-
 module.exports = {
   createLoan,
   AddLoan: createLoan, // Keep for backward compatibility
@@ -1305,6 +1165,5 @@ module.exports = {
   rejectPayment,
   getPendingPayments,
   getLenderLoanStatistics,
-  checkBorrowerFraud,
 };
 

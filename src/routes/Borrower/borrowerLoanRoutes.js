@@ -5,32 +5,17 @@ const {
   makeLoanPayment,
   getPaymentHistory,
   getMyLoans,
-  getBorrowerLoanStatistics,
-  getRecentActivities,
-  createLoanRepaymentOrder,
-  verifyRazorpayPaymentAndRepay,
 } = require("../../controllers/Borrower/borrowerLoanController");
 const multer = require("multer");
 const path = require("path");
 
-// Configure multer for payment proof uploads
-const paymentProofStorage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = path.join(__dirname, "../../uploads/payment-proofs");
-    // Create directory if it doesn't exist
-    require("fs").mkdirSync(uploadDir, { recursive: true });
-    cb(null, uploadDir);
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-    cb(null, "payment-proof-" + uniqueSuffix + path.extname(file.originalname));
-  },
-});
+// Configure multer for payment proof uploads (using memory storage for Cloudinary)
+const paymentProofStorage = multer.memoryStorage();
 
 const uploadPaymentProof = multer({
   storage: paymentProofStorage,
   limits: {
-    fileSize: 5 * 1024 * 1024, // 5MB limit
+    fileSize: 5 * 1024 * 1024,
   },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|pdf/;
@@ -48,12 +33,6 @@ const authenticateUser = require("../../middlewares/authenticateUser");
 const checkBorrower = require("../../middlewares/checkBorrower");
 
 const router = express.Router();
-
-// Get borrower loan statistics with percentages (for dashboard/graph)
-router.get('/statistics', authenticateUser, checkBorrower, getBorrowerLoanStatistics);
-
-// Get recent activities for borrower
-router.get('/recent-activities', authenticateUser, checkBorrower, getRecentActivities);
 
 // Get borrower's loans by borrower ID (no authentication required)
 router.get("/my-loans", getMyLoans);
@@ -76,22 +55,6 @@ router.post(
   checkBorrower,
   uploadPaymentProof.single("paymentProof"),
   makeLoanPayment
-);
-
-// Create Razorpay order for loan repayment (online payment)
-router.post(
-  "/payment/:loanId/razorpay/order",
-  authenticateUser,
-  checkBorrower,
-  createLoanRepaymentOrder
-);
-
-// Verify Razorpay payment and process loan repayment (online payment)
-router.post(
-  "/payment/:loanId/razorpay/verify",
-  authenticateUser,
-  checkBorrower,
-  verifyRazorpayPaymentAndRepay
 );
 
 // Get payment history for a loan (no authentication required)

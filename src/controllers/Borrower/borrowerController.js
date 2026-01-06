@@ -1,5 +1,6 @@
 const User = require("../../models/User");
 const paginateQuery = require("../../utils/pagination");
+const { getBorrowerReputation } = require("../../services/reputationScoringService");
 
 /**
  * Get all borrowers with pagination
@@ -49,10 +50,12 @@ const getAllBorrowers = async (req, res) => {
 /**
  * Get borrower by ID
  * Params: id (borrower ID)
+ * Query params: includeReputation (optional, default: false) - include reputation score
  */
 const getBorrowerById = async (req, res) => {
   try {
     const { id } = req.params;
+    const { includeReputation } = req.query;
 
     if (!id) {
       return res.status(400).json({
@@ -71,9 +74,21 @@ const getBorrowerById = async (req, res) => {
       });
     }
 
+    const responseData = { ...borrower.toObject() };
+
+    // Optionally include reputation score
+    if (includeReputation === "true" && borrower.aadharCardNo) {
+      try {
+        const reputation = await getBorrowerReputation(borrower.aadharCardNo);
+        responseData.reputation = reputation;
+      } catch (reputationError) {
+        console.error("Error fetching borrower reputation:", reputationError);
+      }
+    }
+
     return res.status(200).json({
       message: "Borrower fetched successfully",
-      data: borrower,
+      data: responseData,
     });
   } catch (error) {
     console.error("Error fetching borrower:", error);
