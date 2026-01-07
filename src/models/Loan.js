@@ -87,9 +87,32 @@ const loanSchema = new mongoose.Schema(
       enum: ["one-time", "installment"],
       default: null,
     },
+    loanMode: {
+      type: String,
+      enum: ["cash", "online"],
+      default: null,
+    },
     paymentMode: {
       type: String,
       enum: ["cash", "online"],
+      default: null,
+    },
+    // Razorpay payment fields (for online loan creation)
+    razorpayOrderId: {
+      type: String,
+      default: null,
+    },
+    razorpayPaymentId: {
+      type: String,
+      default: null,
+    },
+    razorpaySignature: {
+      type: String,
+      default: null,
+    },
+    razorpayPaymentStatus: {
+      type: String,
+      enum: ["pending", "completed", "failed"],
       default: null,
     },
     totalPaid: {

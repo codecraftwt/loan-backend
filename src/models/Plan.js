@@ -22,7 +22,7 @@ const planSchema = new mongoose.Schema({
   planFeatures: {
     unlimitedLoans: {
       type: Boolean,
-      default: true // All plans have unlimited loans
+      default: true 
     },
     advancedAnalytics: {
       type: Boolean,

@@ -6,6 +6,8 @@ const {
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
 const { generateLoanAgreement } = require("../../services/agreementService");
+const razorpayInstance = require("../../config/razorpay.config");
+const crypto = require("crypto");
 
 const createLoan = async (req, res) => {
   try {
@@ -69,6 +71,47 @@ const createLoan = async (req, res) => {
     const otp = "1234";
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
+    // Initialize Razorpay order data
+    let razorpayOrderData = null;
+
+    // If loanMode is "online", create Razorpay order
+    if (LoanData.loanMode === "online") {
+      try {
+        const timestamp = Date.now();
+        const shortLoanId = lenderId.toString().substring(18, 24);
+        const receiptId = `loan_${shortLoanId}_${timestamp.toString().slice(-6)}`;
+
+        const options = {
+          amount: LoanData.amount * 100, // Convert to paise
+          currency: "INR",
+          receipt: receiptId,
+          notes: {
+            lenderId: lenderId.toString(),
+            borrowerId: borrower._id.toString(),
+            borrowerAadhaar: LoanData.aadharCardNo,
+            loanAmount: LoanData.amount.toString(),
+            loanPurpose: LoanData.purpose,
+            lenderEmail: lender.email,
+            lenderName: lender.userName || lender.name,
+          },
+        };
+
+        const razorpayOrder = await razorpayInstance.orders.create(options);
+        
+        razorpayOrderData = {
+          razorpayOrderId: razorpayOrder.id,
+          razorpayPaymentStatus: "pending",
+        };
+      } catch (razorpayError) {
+        console.error("Error creating Razorpay order:", razorpayError);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to create Razorpay order. Please try again.",
+          error: razorpayError.message,
+        });
+      }
+    }
+
     // Create loan with OTP (not confirmed yet)
     const newLoan = new Loan({
       name: LoanData.name,
@@ -87,6 +130,7 @@ const createLoan = async (req, res) => {
       loanConfirmed: false, // Will be true after OTP verification
       paymentStatus: "pending", // Status remains "pending" until OTP is verified and beyond
       borrowerAcceptanceStatus: "pending", // For borrower to accept/reject loan
+      ...razorpayOrderData, // Include Razorpay order data if online payment
     });
 
     const agreementText = generateLoanAgreement(newLoan);
@@ -102,14 +146,30 @@ const createLoan = async (req, res) => {
     const populatedLoan = await Loan.findById(newLoan._id)
       .populate('lenderId', 'userName email mobileNo profileImage');
 
+    // Prepare response data
+    const responseData = {
+      ...populatedLoan.toObject(),
+      otp: otp, // Return OTP in response for testing (remove in production)
+      otpMessage: "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
+    };
+
+    // If online payment, include Razorpay order details
+    if (LoanData.loanMode === "online" && razorpayOrderData) {
+      responseData.razorpayOrder = {
+        orderId: razorpayOrderData.razorpayOrderId,
+        amount: LoanData.amount * 100, // Amount in paise
+        currency: "INR",
+        keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_eXyUgxz2VtmepU',
+        message: "Please complete the Razorpay payment to proceed with loan creation. After payment, use the verify-payment endpoint.",
+      };
+    }
+
     return res.status(201).json({
       success: true,
-      message: "Loan created successfully. OTP sent to borrower's mobile number.",
-      data: {
-        ...populatedLoan.toObject(),
-        otp: otp, // Return OTP in response for testing (remove in production)
-        otpMessage: "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
-      },
+      message: LoanData.loanMode === "online" 
+        ? "Loan created successfully. Please complete the Razorpay payment to proceed. OTP will be sent after payment verification."
+        : "Loan created successfully. OTP sent to borrower's mobile number.",
+      data: responseData,
     });
   } catch (error) {
     if (error.name === "ValidationError") {
@@ -1148,9 +1208,157 @@ const getLenderLoanStatistics = async (req, res) => {
   }
 };
 
+/**
+ * Verify Razorpay Payment for Loan Creation
+ * This endpoint is called after the lender completes the Razorpay payment
+ */
+const verifyLoanPayment = async (req, res) => {
+  try {
+    const {
+      loanId,
+      razorpay_payment_id,
+      razorpay_order_id,
+      razorpay_signature,
+    } = req.body;
+
+    const lenderId = req.user.id;
+
+    // Validate required fields
+    if (!loanId || !razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: loanId, razorpay_payment_id, razorpay_order_id, razorpay_signature",
+      });
+    }
+
+    // Find the loan
+    const loan = await Loan.findById(loanId);
+
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    // Verify loan belongs to the lender
+    if (loan.lenderId.toString() !== lenderId) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only verify payments for loans that you created",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Verify loan is for online payment
+    if (loan.loanMode !== "online") {
+      return res.status(400).json({
+        success: false,
+        message: "This loan is not configured for online payment",
+      });
+    }
+
+    // Verify Razorpay order ID matches
+    if (loan.razorpayOrderId !== razorpay_order_id) {
+      return res.status(400).json({
+        success: false,
+        message: "Razorpay order ID does not match",
+      });
+    }
+
+    // Check if payment is already verified
+    if (loan.razorpayPaymentStatus === "completed") {
+      return res.status(400).json({
+        success: false,
+        message: "Payment for this loan has already been verified",
+      });
+    }
+
+    // Verify Razorpay signature
+    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET || 'IOULEZFaWRNrL92MNqF5eDr0';
+    const signatureString = razorpay_order_id + "|" + razorpay_payment_id;
+    
+    const expectedSignature = crypto
+      .createHmac("sha256", razorpaySecret)
+      .update(signatureString)
+      .digest("hex");
+
+    const isAuthentic = expectedSignature === razorpay_signature;
+
+    if (!isAuthentic) {
+      console.error("Payment signature verification failed:");
+      console.error("Order ID:", razorpay_order_id);
+      console.error("Payment ID:", razorpay_payment_id);
+      console.error("Expected Signature:", expectedSignature);
+      console.error("Received Signature:", razorpay_signature);
+      
+      // Update loan with failed payment status
+      loan.razorpayPaymentStatus = "failed";
+      await loan.save();
+
+      return res.status(400).json({
+        success: false,
+        message: "Payment verification failed. Invalid signature.",
+        error: "Signature mismatch",
+      });
+    }
+
+    // Payment is verified, update loan with payment details
+    loan.razorpayPaymentId = razorpay_payment_id;
+    loan.razorpaySignature = razorpay_signature;
+    loan.razorpayPaymentStatus = "completed";
+    
+    // Update payment mode
+    loan.paymentMode = "online";
+
+    // Note: Loan is still not confirmed until OTP is verified
+    // The OTP verification process remains the same as cash payments
+
+    await loan.save();
+
+    // Send notification to borrower (non-blocking)
+    sendLoanUpdateNotification(loan.aadhaarNumber, loan).catch(err => {
+      console.log("Notification skipped:", err.message);
+    });
+
+    // Populate loan details for response
+    const verifiedLoan = await Loan.findById(loan._id)
+      .populate('lenderId', 'userName email mobileNo profileImage')
+      .populate({
+        path: 'borrowerId',
+        select: 'userName email mobileNo aadharCardNo',
+        strictPopulate: false
+      });
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment verified successfully. Please verify OTP to confirm the loan.",
+      data: {
+        loan: verifiedLoan,
+        paymentDetails: {
+          razorpayOrderId: razorpay_order_id,
+          razorpayPaymentId: razorpay_payment_id,
+          amount: loan.amount,
+          currency: "INR",
+          paymentStatus: "completed",
+        },
+        nextStep: "Verify OTP using the verify-otp endpoint to complete loan confirmation",
+      },
+    });
+  } catch (error) {
+    console.error("Error verifying loan payment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createLoan,
   AddLoan: createLoan, // Keep for backward compatibility
+  verifyLoanPayment,
   verifyOTPAndConfirmLoan,
   resendOTP,
   getLoansByLender,

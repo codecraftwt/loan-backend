@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   createLoan,
+  verifyLoanPayment,
   verifyOTPAndConfirmLoan,
   resendOTP,
   getLoansByLender,
@@ -29,6 +30,9 @@ router.get('/statistics', authenticateUser, checkLender, getLenderLoanStatistics
 
 // Create loan (only lenders can create loans for borrowers) - requires active plan
 router.post("/create", authenticateUser, checkLender, checkActivePlan, createLoan);
+
+// Verify Razorpay payment for loan creation (only for online payments)
+router.post("/verify-payment", authenticateUser, checkLender, verifyLoanPayment);
 
 // Verify OTP and confirm loan
 router.post("/verify-otp", authenticateUser, checkLender, verifyOTPAndConfirmLoan);
