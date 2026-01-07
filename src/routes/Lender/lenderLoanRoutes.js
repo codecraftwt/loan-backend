@@ -15,6 +15,7 @@ const {
   rejectPayment,
   getPendingPayments,
   getLenderLoanStatistics,
+  getBorrowerReputationByAadhaar,
 } = require("../../controllers/Lender/lenderLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
@@ -27,6 +28,9 @@ router.get('/recent-activities', authenticateUser, checkLender, getRecentActivit
 
 // Get lender loan statistics with percentages (for dashboard/graph)
 router.get('/statistics', authenticateUser, checkLender, getLenderLoanStatistics);
+
+// Get borrower reputation score by Aadhaar number (lender)
+router.get('/reputation/:aadhaarNumber', authenticateUser, checkLender, getBorrowerReputationByAadhaar);
 
 // Create loan (only lenders can create loans for borrowers) - requires active plan
 router.post("/create", authenticateUser, checkLender, checkActivePlan, createLoan);

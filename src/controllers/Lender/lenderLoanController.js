@@ -8,6 +8,7 @@ const paginateQuery = require("../../utils/pagination");
 const { generateLoanAgreement } = require("../../services/agreementService");
 const razorpayInstance = require("../../config/razorpay.config");
 const crypto = require("crypto");
+const { getBorrowerReputation } = require("../../services/reputationScoringService");
 
 const createLoan = async (req, res) => {
   try {
@@ -1355,10 +1356,50 @@ const verifyLoanPayment = async (req, res) => {
   }
 };
 
+/**
+ * Get borrower reputation score by Aadhaar number (Lender)
+ * Params: aadhaarNumber (12 digits)
+ */
+const getBorrowerReputationByAadhaar = async (req, res) => {
+  try {
+    const { aadhaarNumber } = req.params;
+
+    if (!aadhaarNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "aadhaarNumber is required",
+      });
+    }
+
+    if (!/^\d{12}$/.test(aadhaarNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: "aadhaarNumber must be a valid 12-digit number",
+      });
+    }
+
+    const reputation = await getBorrowerReputation(aadhaarNumber);
+
+    return res.status(200).json({
+      success: true,
+      message: "Borrower reputation fetched successfully",
+      data: reputation,
+    });
+  } catch (error) {
+    console.error("Error fetching borrower reputation:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createLoan,
   AddLoan: createLoan, // Keep for backward compatibility
   verifyLoanPayment,
+  getBorrowerReputationByAadhaar,
   verifyOTPAndConfirmLoan,
   resendOTP,
   getLoansByLender,
