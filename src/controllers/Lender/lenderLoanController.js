@@ -9,6 +9,7 @@ const { generateLoanAgreement } = require("../../services/agreementService");
 const razorpayInstance = require("../../config/razorpay.config");
 const crypto = require("crypto");
 const { getBorrowerReputation } = require("../../services/reputationScoringService");
+const { getFraudDetails } = require("../../services/fraudDetectionService");
 
 const createLoan = async (req, res) => {
   try {
@@ -204,7 +205,7 @@ const getLoansByLender = async (req, res) => {
 
     // Add name search if provided
     if (search) {
-      query.name = { $regex: search, $options: 'i' }; // Case-insensitive search
+      query.name = { $regex: search, $options: 'i' };
     }
 
     if (startDate) query.loanStartDate = { $gte: new Date(startDate) };
@@ -1631,6 +1632,122 @@ const getLenderInstallmentHistory = async (req, res) => {
   }
 };
 
+/**
+ * Get Borrower Risk/Fraud Assessment by Aadhaar Number (Lender)
+ * Returns risk badges (low, medium, high, critical) and fraud details
+ */
+const getBorrowerRiskAssessment = async (req, res) => {
+  try {
+    const { aadhaarNumber } = req.params;
+
+    // Validate aadhaarNumber
+    if (!aadhaarNumber) {
+      return res.status(400).json({
+        success: false,
+        message: "Aadhaar number is required",
+      });
+    }
+
+    if (!/^\d{12}$/.test(aadhaarNumber)) {
+      return res.status(400).json({
+        success: false,
+        message: "Aadhaar number must be a valid 12-digit number",
+      });
+    }
+
+    // Check if borrower exists
+    const borrower = await User.findOne({ 
+      aadharCardNo: aadhaarNumber,
+      roleId: 2 // Borrower role
+    }).select('userName email mobileNo aadharCardNo fraudDetection');
+
+    if (!borrower) {
+      return res.status(404).json({
+        success: false,
+        message: "Borrower not found with the provided Aadhaar number",
+      });
+    }
+
+    // Get fraud/risk details
+    const fraudDetails = await getFraudDetails(aadhaarNumber);
+
+    // Determine risk badge
+    const riskBadge = {
+      level: fraudDetails.riskLevel, // "low", "medium", "high", "critical"
+      label: fraudDetails.riskLevel.charAt(0).toUpperCase() + fraudDetails.riskLevel.slice(1) + " Risk",
+      color: getRiskBadgeColor(fraudDetails.riskLevel),
+      score: fraudDetails.fraudScore,
+    };
+
+    // Format response with badges
+    return res.status(200).json({
+      success: true,
+      message: "Borrower risk assessment retrieved successfully",
+      data: {
+        borrower: {
+          aadhaarNumber: borrower.aadharCardNo,
+          name: borrower.userName,
+          email: borrower.email,
+          mobileNo: borrower.mobileNo,
+        },
+        riskBadge: riskBadge,
+        fraudScore: fraudDetails.fraudScore,
+        riskLevel: fraudDetails.riskLevel,
+        flags: {
+          multipleLoansInShortTime: fraudDetails.flags.multipleLoansInShortTime,
+          hasPendingLoans: fraudDetails.flags.hasPendingLoans,
+          hasOverdueLoans: fraudDetails.flags.hasOverdueLoans,
+          totalActiveLoans: fraudDetails.flags.totalActiveLoans,
+          totalPendingLoans: fraudDetails.flags.totalPendingLoans,
+          totalOverdueLoans: fraudDetails.flags.totalOverdueLoans,
+        },
+        details: {
+          multipleLoans: {
+            flagged: fraudDetails.details.multipleLoans.flagged || false,
+            totalActiveLoans: fraudDetails.details.multipleLoans.totalActiveLoans || 0,
+            loansIn30Days: fraudDetails.details.multipleLoans.loansIn30Days || 0,
+            loansIn90Days: fraudDetails.details.multipleLoans.loansIn90Days || 0,
+            loansIn180Days: fraudDetails.details.multipleLoans.loansIn180Days || 0,
+          },
+          pendingLoans: {
+            count: fraudDetails.details.pendingLoans.count || 0,
+            totalAmount: fraudDetails.details.pendingLoans.amount || 0,
+          },
+          overdueLoans: {
+            count: fraudDetails.details.overdueLoans.count || 0,
+            totalAmount: fraudDetails.details.overdueLoans.amount || 0,
+            maxOverdueDays: fraudDetails.details.overdueLoans.maxOverdueDays || 0,
+            severeOverdueCount: fraudDetails.details.overdueLoans.severeOverdueCount || 0,
+          },
+        },
+        recommendation: fraudDetails.recommendation,
+        lastChecked: fraudDetails.flags.lastFraudCheck,
+        warning: fraudDetails.riskLevel !== 'low' 
+          ? `⚠️ ${riskBadge.label}: ${fraudDetails.recommendation}`
+          : null,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching borrower risk assessment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+// Helper function to get badge color based on risk level
+function getRiskBadgeColor(riskLevel) {
+  const colors = {
+    low: "#10b981",      // Green
+    medium: "#f59e0b",    // Amber/Orange
+    high: "#ef4444",     // Red
+    critical: "#dc2626",  // Dark Red
+  };
+  return colors[riskLevel] || "#6b7280"; // Default gray
+}
+
 module.exports = {
   createLoan,
   AddLoan: createLoan, // Keep for backward compatibility
@@ -1651,5 +1768,6 @@ module.exports = {
   getPendingPayments,
   getLenderLoanStatistics,
   getLenderInstallmentHistory,
+  getBorrowerRiskAssessment,
 };
 

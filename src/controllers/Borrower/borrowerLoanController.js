@@ -7,6 +7,7 @@ const {
 const paginateQuery = require("../../utils/pagination");
 const razorpayInstance = require("../../config/razorpay.config");
 const crypto = require("crypto");
+const cloudinary = require("cloudinary").v2;
 
 // Get loans by Aadhaar (borrower views their loans)
 const getLoanByAadhaar = async (req, res) => {
@@ -242,6 +243,7 @@ const makeLoanPayment = async (req, res) => {
       amount: Number(amount), // Ensure it's a number
       paymentMode,
       paymentType,
+      installmentNumber: installmentNumber ? Number(installmentNumber) : null,
       transactionId: transactionId || null,
       notes: notes || null,
       paymentDate: new Date(),
@@ -250,7 +252,30 @@ const makeLoanPayment = async (req, res) => {
 
     // Handle payment proof upload if provided
     if (req.file) {
-      paymentData.paymentProof = req.file.path;
+      try {
+        // Upload to Cloudinary
+        const uploadResult = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: "Loan_payment_proofs",
+              resource_type: req.file.mimetype.startsWith("image/") ? "image" : "raw",
+            },
+            (error, result) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve(result);
+              }
+            }
+          );
+          stream.end(req.file.buffer);
+        });
+        paymentData.paymentProof = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("Error uploading payment proof to Cloudinary:", uploadError);
+        // Continue without payment proof if upload fails
+        paymentData.paymentProof = null;
+      }
     }
 
     // DON'T update loan totals here - wait for lender confirmation
