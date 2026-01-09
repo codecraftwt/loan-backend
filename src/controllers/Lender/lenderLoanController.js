@@ -1395,6 +1395,242 @@ const getBorrowerReputationByAadhaar = async (req, res) => {
   }
 };
 
+/**
+ * Get Installment History for a Loan (Lender View)
+ * Returns detailed installment history for loans given by lender
+ */
+const getLenderInstallmentHistory = async (req, res) => {
+  try {
+    const lenderId = req.user.id;
+    const { loanId } = req.params;
+
+    // Find the loan
+    const loan = await Loan.findById(loanId)
+      .populate('lenderId', 'userName email mobileNo profileImage')
+      .populate({
+        path: 'borrowerId',
+        select: 'userName email mobileNo aadharCardNo',
+        strictPopulate: false
+      });
+
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    // Verify lender owns this loan
+    // Handle both populated (object) and unpopulated (ObjectId) lenderId
+    const loanLenderId = (loan.lenderId._id || loan.lenderId).toString();
+    if (loanLenderId !== lenderId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only view installment history for loans you gave",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Check if loan has installment plan
+    const isInstallmentLoan = loan.paymentType === "installment" || loan.installmentPlan?.totalInstallments > 1;
+    
+    if (!isInstallmentLoan) {
+      return res.status(400).json({
+        success: false,
+        message: "This loan is not an installment loan",
+      });
+    }
+
+    const installmentPlan = loan.installmentPlan || {};
+    const totalInstallments = installmentPlan.totalInstallments || 1;
+    const installmentAmount = installmentPlan.installmentAmount || loan.amount;
+    const frequency = installmentPlan.installmentFrequency || "monthly";
+    const loanStartDate = loan.loanStartDate || loan.loanGivenDate || loan.createdAt;
+
+    // Get all confirmed payments (these are the paid installments)
+    const confirmedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'confirmed');
+    const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
+    const rejectedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'rejected');
+
+    // Filter installment payments
+    const confirmedInstallments = confirmedPayments.filter(p => p.paymentType === 'installment');
+    const pendingInstallments = pendingPayments.filter(p => p.paymentType === 'installment');
+    const rejectedInstallments = rejectedPayments.filter(p => p.paymentType === 'installment');
+
+    // Calculate frequency in days
+    const frequencyDays = {
+      weekly: 7,
+      monthly: 30,
+      quarterly: 90
+    };
+    const daysToAdd = frequencyDays[frequency] || 30;
+
+    // Helper function to calculate due date
+    const calculateDueDate = (startDate, installmentIndex, daysToAdd) => {
+      const start = new Date(startDate);
+      const dueDate = new Date(start);
+      dueDate.setDate(dueDate.getDate() + (installmentIndex * daysToAdd));
+      return dueDate;
+    };
+
+    // Build complete installment schedule
+    const installmentSchedule = [];
+    const currentDate = new Date();
+    let paidInstallmentsCount = 0;
+
+    // Sort confirmed installments by payment date
+    confirmedInstallments.sort((a, b) => new Date(a.confirmedAt || a.paymentDate) - new Date(b.confirmedAt || b.paymentDate));
+
+    // Add paid installments
+    confirmedInstallments.forEach((payment, index) => {
+      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      installmentSchedule.push({
+        installmentNumber: paidInstallmentsCount + 1,
+        amount: payment.amount,
+        dueDate: dueDate,
+        status: "paid",
+        paidDate: payment.confirmedAt || payment.paymentDate,
+        paymentMode: payment.paymentMode,
+        transactionId: payment.transactionId,
+        notes: payment.notes,
+        isOnTime: new Date(payment.confirmedAt || payment.paymentDate) <= dueDate,
+        paymentId: payment._id,
+        confirmedBy: payment.confirmedBy,
+        confirmedAt: payment.confirmedAt,
+      });
+      paidInstallmentsCount++;
+    });
+
+    // Add pending installments
+    pendingInstallments.forEach((payment, index) => {
+      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      installmentSchedule.push({
+        installmentNumber: paidInstallmentsCount + 1,
+        amount: payment.amount,
+        dueDate: dueDate,
+        status: "pending",
+        submittedDate: payment.paymentDate,
+        paymentMode: payment.paymentMode,
+        transactionId: payment.transactionId,
+        notes: payment.notes,
+        paymentId: payment._id,
+        requiresConfirmation: true, // Lender needs to confirm this
+      });
+      paidInstallmentsCount++;
+    });
+
+    // Add rejected installments
+    rejectedInstallments.forEach((payment, index) => {
+      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      installmentSchedule.push({
+        installmentNumber: paidInstallmentsCount + 1,
+        amount: payment.amount,
+        dueDate: dueDate,
+        status: "rejected",
+        rejectedDate: payment.confirmedAt || payment.paymentDate,
+        paymentMode: payment.paymentMode,
+        transactionId: payment.transactionId,
+        notes: payment.notes,
+        rejectionReason: payment.notes,
+        paymentId: payment._id,
+        rejectedBy: payment.confirmedBy,
+      });
+      paidInstallmentsCount++;
+    });
+
+    // Add upcoming installments (not yet paid or submitted)
+    while (installmentSchedule.length < totalInstallments) {
+      const installmentNumber = installmentSchedule.length + 1;
+      const dueDate = calculateDueDate(loanStartDate, installmentSchedule.length, daysToAdd);
+      const isOverdue = new Date(dueDate) < currentDate && installmentSchedule.length > 0;
+      
+      installmentSchedule.push({
+        installmentNumber: installmentNumber,
+        amount: installmentAmount,
+        dueDate: dueDate,
+        status: isOverdue ? "overdue" : "upcoming",
+        isOverdue: isOverdue,
+        overdueDays: isOverdue ? Math.floor((currentDate - dueDate) / (1000 * 60 * 60 * 24)) : 0,
+      });
+    }
+
+    // Calculate summary statistics
+    const paidInstallments = installmentSchedule.filter(i => i.status === 'paid');
+    const pendingInstallmentsCount = installmentSchedule.filter(i => i.status === 'pending').length;
+    const overdueInstallments = installmentSchedule.filter(i => i.status === 'overdue' || (i.status === 'upcoming' && i.isOverdue));
+    const upcomingInstallments = installmentSchedule.filter(i => i.status === 'upcoming' && !i.isOverdue);
+
+    const totalPaidAmount = paidInstallments.reduce((sum, i) => sum + (i.amount || 0), 0);
+    const totalPendingAmount = pendingInstallments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const totalOverdueAmount = overdueInstallments.reduce((sum, i) => sum + (i.amount || 0), 0);
+
+    // Calculate on-time payment rate
+    const onTimePayments = paidInstallments.filter(i => i.isOnTime).length;
+    const onTimeRate = paidInstallments.length > 0 
+      ? parseFloat(((onTimePayments / paidInstallments.length) * 100).toFixed(2))
+      : 0;
+
+    return res.status(200).json({
+      success: true,
+      message: "Installment history retrieved successfully",
+      data: {
+        loanId: loan._id,
+        loanDetails: {
+          loanName: loan.name,
+          borrowerName: loan.borrowerId?.userName || loan.name,
+          borrowerAadhaar: loan.aadhaarNumber,
+          totalLoanAmount: loan.amount,
+          totalPaidAmount: loan.totalPaid || 0,
+          remainingAmount: loan.remainingAmount || (loan.amount - (loan.totalPaid || 0)),
+          loanStatus: loan.paymentStatus,
+        },
+        installmentPlan: {
+          totalInstallments: totalInstallments,
+          paidInstallments: paidInstallments.length,
+          pendingInstallments: pendingInstallmentsCount,
+          overdueInstallments: overdueInstallments.length,
+          upcomingInstallments: upcomingInstallments.length,
+          installmentAmount: installmentAmount,
+          frequency: frequency,
+          nextDueDate: installmentPlan.nextDueDate || calculateDueDate(loanStartDate, paidInstallments.length, daysToAdd),
+        },
+        summary: {
+          totalPaidAmount: totalPaidAmount,
+          totalPendingAmount: totalPendingAmount,
+          totalOverdueAmount: totalOverdueAmount,
+          totalRemainingAmount: loan.remainingAmount || (loan.amount - (loan.totalPaid || 0)),
+          onTimePayments: onTimePayments,
+          totalPaidInstallments: paidInstallments.length,
+          onTimePaymentRate: onTimeRate,
+        },
+        installmentHistory: installmentSchedule,
+        borrowerInfo: {
+          borrowerName: loan.borrowerId?.userName || loan.name,
+          borrowerPhone: loan.borrowerId?.mobileNo || "Contact borrower",
+          borrowerEmail: loan.borrowerId?.email || "Contact borrower",
+          borrowerAadhaar: loan.aadhaarNumber,
+        },
+        actions: {
+          pendingPaymentsCount: pendingInstallmentsCount,
+          requiresAction: pendingInstallmentsCount > 0 || overdueInstallments.length > 0,
+          message: pendingInstallmentsCount > 0 
+            ? `You have ${pendingInstallmentsCount} pending payment(s) awaiting confirmation`
+            : overdueInstallments.length > 0
+            ? `You have ${overdueInstallments.length} overdue installment(s)`
+            : null,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error retrieving lender installment history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createLoan,
   AddLoan: createLoan, // Keep for backward compatibility
@@ -1414,5 +1650,6 @@ module.exports = {
   rejectPayment,
   getPendingPayments,
   getLenderLoanStatistics,
+  getLenderInstallmentHistory,
 };
 

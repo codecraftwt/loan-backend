@@ -16,6 +16,7 @@ const {
   getPendingPayments,
   getLenderLoanStatistics,
   getBorrowerReputationByAadhaar,
+  getLenderInstallmentHistory,
 } = require("../../controllers/Lender/lenderLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
@@ -46,6 +47,9 @@ router.post("/resend-otp", authenticateUser, checkLender, resendOTP);
 
 // Get loans by lender (only lenders can view their loans)
 router.get("/my-loans", authenticateUser, checkLender, getLoansByLender);
+
+// Get installment history for a loan (installment loans only) - lender view
+router.get("/installment-history/:loanId", authenticateUser, checkLender, getLenderInstallmentHistory);
 
 // Get loan details by ID (only lenders can view their loan details)
 router.get("/:id", authenticateUser, checkLender, GetLoanDetails);

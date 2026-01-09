@@ -6,6 +6,10 @@ const {
   getPaymentHistory,
   getMyLoans,
   getBorrowerStatistics,
+  getBorrowerRecentActivities,
+  createRazorpayOrderForPayment,
+  verifyRazorpayPayment,
+  getInstallmentHistory,
 } = require("../../controllers/Borrower/borrowerLoanController");
 const multer = require("multer");
 const path = require("path");
@@ -35,6 +39,9 @@ const checkBorrower = require("../../middlewares/checkBorrower");
 
 const router = express.Router();
 
+// Get borrower recent activities
+router.get("/recent-activities", authenticateUser, checkBorrower, getBorrowerRecentActivities);
+
 // Get borrower loan statistics with percentages (for dashboard/graph)
 router.get("/statistics", authenticateUser, checkBorrower, getBorrowerStatistics);
 
@@ -61,8 +68,27 @@ router.post(
   makeLoanPayment
 );
 
+// Create Razorpay order for borrower loan payment
+router.post(
+  "/razorpay/create-order/:loanId",
+  authenticateUser,
+  checkBorrower,
+  createRazorpayOrderForPayment
+);
+
+// Verify Razorpay payment for borrower loan repayment
+router.post(
+  "/razorpay/verify-payment/:loanId",
+  authenticateUser,
+  checkBorrower,
+  verifyRazorpayPayment
+);
+
 // Get payment history for a loan (no authentication required)
 router.get("/payment-history/:loanId", getPaymentHistory);
+
+// Get installment history for a loan (installment loans only)
+router.get("/installment-history/:loanId", authenticateUser, checkBorrower, getInstallmentHistory);
 
 module.exports = router;
 

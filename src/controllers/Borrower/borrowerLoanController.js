@@ -5,6 +5,8 @@ const {
   sendLoanUpdateNotification,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
+const razorpayInstance = require("../../config/razorpay.config");
+const crypto = require("crypto");
 
 // Get loans by Aadhaar (borrower views their loans)
 const getLoanByAadhaar = async (req, res) => {
@@ -607,6 +609,157 @@ const getPaymentHistory = async (req, res) => {
   }
 };
 
+// Get recent activities for borrower
+const getBorrowerRecentActivities = async (req, res) => {
+  try {
+    const userId = req.user.id; // Get the logged-in borrower ID
+    const limit = parseInt(req.query.limit) || 5; // Default to 5 activities
+
+    // Helper function to format relative time
+    const getRelativeTime = (timestamp) => {
+      const now = new Date();
+      const past = new Date(timestamp);
+      const diffInSeconds = Math.floor((now - past) / 1000);
+
+      if (diffInSeconds < 60) {
+        return `${diffInSeconds} second${diffInSeconds !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInMinutes = Math.floor(diffInSeconds / 60);
+      if (diffInMinutes < 60) {
+        return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInHours = Math.floor(diffInMinutes / 60);
+      if (diffInHours < 24) {
+        return `${diffInHours} hour${diffInHours !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInDays = Math.floor(diffInHours / 24);
+      if (diffInDays < 30) {
+        return `${diffInDays} day${diffInDays !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInMonths = Math.floor(diffInDays / 30);
+      if (diffInMonths < 12) {
+        return `${diffInMonths} month${diffInMonths !== 1 ? 's' : ''} ago`;
+      }
+
+      const diffInYears = Math.floor(diffInMonths / 12);
+      return `${diffInYears} year${diffInYears !== 1 ? 's' : ''} ago`;
+    };
+
+    // Get borrower's Aadhaar number
+    const borrower = await User.findById(userId).select('aadharCardNo');
+    
+    if (!borrower || !borrower.aadharCardNo) {
+      return res.status(404).json({
+        success: false,
+        message: "Borrower profile not found or Aadhaar number missing",
+      });
+    }
+
+    // Get borrower's loans (loans taken) using aadhaarNumber
+    const loansTaken = await Loan.find({ aadhaarNumber: borrower.aadharCardNo })
+      .sort({ updatedAt: -1 })
+      .limit(limit * 2) // Get more to filter
+      .select('name amount paymentStatus borrowerAcceptanceStatus updatedAt lenderId paymentHistory')
+      .populate('lenderId', 'userName')
+      .lean();
+
+    // Format activities (only loans taken activities for borrowers)
+    const activities = [];
+
+    loansTaken.forEach(loan => {
+      let shortMessage = '';
+      let message = '';
+
+      const lenderName = loan.lenderId?.userName || 'Lender';
+
+      // Check for payment confirmation activities
+      if (loan.paymentHistory && Array.isArray(loan.paymentHistory) && loan.paymentHistory.length > 0) {
+        const recentPayment = loan.paymentHistory[loan.paymentHistory.length - 1];
+        const paymentDate = new Date(recentPayment.paymentDate || recentPayment.confirmedAt || loan.updatedAt);
+        const loanUpdateDate = new Date(loan.updatedAt);
+        
+        // If payment was updated recently (within last minute), prioritize payment status
+        const timeDiff = Math.abs(loanUpdateDate - paymentDate);
+        if (timeDiff < 60000 && recentPayment.paymentStatus === 'confirmed') {
+          shortMessage = 'Payment Confirmed';
+          message = `Your payment of ₹${recentPayment.amount} for loan from ${lenderName} has been confirmed`;
+        } else if (timeDiff < 60000 && recentPayment.paymentStatus === 'rejected') {
+          shortMessage = 'Payment Rejected';
+          message = `Your payment of ₹${recentPayment.amount} for loan from ${lenderName} was rejected`;
+        } else if (timeDiff < 60000 && recentPayment.paymentStatus === 'pending') {
+          shortMessage = 'Payment Submitted';
+          message = `You submitted a payment of ₹${recentPayment.amount} for loan from ${lenderName} (pending confirmation)`;
+        }
+      }
+
+      // If no payment activity, check loan status
+      if (!shortMessage) {
+        if (loan.paymentStatus === 'paid') {
+          shortMessage = 'Loan Paid';
+          message = `You fully paid loan of ₹${loan.amount} from ${lenderName}`;
+        } else if (loan.borrowerAcceptanceStatus === 'accepted') {
+          shortMessage = 'Loan Accepted';
+          message = `You accepted loan of ₹${loan.amount} from ${lenderName}`;
+        } else if (loan.borrowerAcceptanceStatus === 'rejected') {
+          shortMessage = 'Loan Rejected';
+          message = `You rejected loan of ₹${loan.amount} from ${lenderName}`;
+        } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
+          shortMessage = 'Loan Received';
+          message = `You received a loan offer of ₹${loan.amount} from ${lenderName}`;
+        } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
+          shortMessage = 'Loan Active';
+          message = `Your loan of ₹${loan.amount} from ${lenderName} is active`;
+        } else if (loan.paymentStatus === 'part paid') {
+          shortMessage = 'Loan Partially Paid';
+          message = `Your loan of ₹${loan.amount} from ${lenderName} is partially paid`;
+        } else if (loan.paymentStatus === 'overdue') {
+          shortMessage = 'Loan Overdue';
+          message = `Your loan of ₹${loan.amount} from ${lenderName} is overdue`;
+        }
+      }
+
+      // Only add if we have a message
+      if (shortMessage && message) {
+        activities.push({
+          type: 'loan_taken',
+          shortMessage,
+          message,
+          loanId: loan._id,
+          loanName: loan.name || 'Loan',
+          amount: loan.amount,
+          lenderName: lenderName,
+          timestamp: loan.updatedAt,
+          relativeTime: getRelativeTime(loan.updatedAt)
+        });
+      }
+    });
+
+    // Sort all activities by timestamp (most recent first)
+    activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Take only the most recent ones based on limit
+    const recentActivities = activities.slice(0, limit);
+
+    return res.status(200).json({
+      success: true,
+      message: "Borrower recent activities fetched successfully",
+      count: recentActivities.length,
+      data: recentActivities,
+    });
+  } catch (error) {
+    console.error("Error fetching borrower recent activities:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 // Get borrower loan statistics with percentages for dashboard/graph
 const getBorrowerStatistics = async (req, res) => {
   try {
@@ -775,6 +928,543 @@ const getBorrowerStatistics = async (req, res) => {
   }
 };
 
+/**
+ * Create Razorpay Order for Borrower Loan Payment
+ * This endpoint creates a Razorpay order when borrower wants to pay loan online
+ */
+const createRazorpayOrderForPayment = async (req, res) => {
+  try {
+    const borrowerId = req.user.id;
+    const { loanId } = req.params;
+    const { amount, paymentType = "one-time" } = req.body;
+
+    // Validate required fields
+    if (!amount) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount is required",
+      });
+    }
+
+    if (!["one-time", "installment"].includes(paymentType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment type. Must be 'one-time' or 'installment'",
+      });
+    }
+
+    // Validate amount
+    const paymentAmount = Number(amount);
+    if (paymentAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount must be greater than 0",
+      });
+    }
+
+    // Find the loan
+    const loan = await Loan.findById(loanId);
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    // Verify borrower owns this loan
+    const borrower = await User.findById(borrowerId);
+    if (!borrower || loan.aadhaarNumber !== borrower.aadharCardNo) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only create payment orders for your own loans",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Check if loan is already fully paid
+    if (loan.paymentStatus === "paid") {
+      return res.status(400).json({
+        success: false,
+        message: "This loan is already fully paid",
+      });
+    }
+
+    // Validate payment amount doesn't exceed remaining amount
+    const remainingAmount = loan.remainingAmount || (loan.amount - (loan.totalPaid || 0));
+    if (paymentAmount > remainingAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Payment amount (₹${paymentAmount}) cannot exceed remaining amount (₹${remainingAmount})`,
+        remainingAmount: remainingAmount,
+      });
+    }
+
+    // Get lender details
+    const lender = await User.findById(loan.lenderId).select('userName email');
+
+    // Create Razorpay order
+    try {
+      const timestamp = Date.now();
+      const shortLoanId = loanId.toString().substring(18, 24);
+      const shortBorrowerId = borrowerId.toString().substring(18, 24);
+      const receiptId = `payment_${shortLoanId}_${shortBorrowerId}_${timestamp.toString().slice(-6)}`;
+
+      const options = {
+        amount: paymentAmount * 100, // Convert to paise
+        currency: "INR",
+        receipt: receiptId,
+        notes: {
+          borrowerId: borrowerId.toString(),
+          loanId: loanId.toString(),
+          lenderId: loan.lenderId.toString(),
+          paymentAmount: paymentAmount.toString(),
+          paymentType: paymentType,
+          loanAmount: loan.amount.toString(),
+          remainingAmount: remainingAmount.toString(),
+          borrowerAadhaar: loan.aadhaarNumber,
+          borrowerName: borrower.userName || borrower.name,
+          lenderName: lender?.userName || "Lender",
+        },
+      };
+
+      const razorpayOrder = await razorpayInstance.orders.create(options);
+
+      return res.status(200).json({
+        success: true,
+        message: "Razorpay order created successfully",
+        data: {
+          orderId: razorpayOrder.id,
+          amount: razorpayOrder.amount, // Amount in paise
+          currency: razorpayOrder.currency,
+          receipt: razorpayOrder.receipt,
+          loanId: loanId,
+          paymentAmount: paymentAmount,
+          paymentType: paymentType,
+          remainingAmount: remainingAmount,
+          keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_eXyUgxz2VtmepU',
+          loanDetails: {
+            totalAmount: loan.amount,
+            totalPaid: loan.totalPaid || 0,
+            remainingAmount: remainingAmount,
+            loanStatus: loan.paymentStatus,
+          },
+        },
+      });
+    } catch (razorpayError) {
+      console.error("Error creating Razorpay order:", razorpayError);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to create Razorpay order. Please try again.",
+        error: razorpayError.message,
+      });
+    }
+  } catch (error) {
+    console.error("Error creating Razorpay order for payment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Verify Razorpay Payment for Borrower Loan Repayment
+ * This endpoint verifies the Razorpay payment after borrower completes payment
+ */
+const verifyRazorpayPayment = async (req, res) => {
+  try {
+    const borrowerId = req.user.id;
+    const { loanId } = req.params;
+    const {
+      razorpay_payment_id,
+      razorpay_order_id,
+      razorpay_signature,
+      amount,
+      paymentType = "one-time",
+      notes,
+    } = req.body;
+
+    // Validate required fields
+    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature || !amount) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields: razorpay_payment_id, razorpay_order_id, razorpay_signature, amount",
+      });
+    }
+
+    if (!["one-time", "installment"].includes(paymentType)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid payment type. Must be 'one-time' or 'installment'",
+      });
+    }
+
+    const paymentAmount = Number(amount);
+
+    // Find the loan
+    const loan = await Loan.findById(loanId);
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    // Verify borrower owns this loan
+    const borrower = await User.findById(borrowerId);
+    if (!borrower || loan.aadhaarNumber !== borrower.aadharCardNo) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only verify payments for your own loans",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Check if loan is already fully paid
+    if (loan.paymentStatus === "paid") {
+      return res.status(400).json({
+        success: false,
+        message: "This loan is already fully paid",
+      });
+    }
+
+    // Verify Razorpay signature
+    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET || 'IOULEZFaWRNrL92MNqF5eDr0';
+    const signatureString = razorpay_order_id + "|" + razorpay_payment_id;
+    
+    const expectedSignature = crypto
+      .createHmac("sha256", razorpaySecret)
+      .update(signatureString)
+      .digest("hex");
+
+    const isAuthentic = expectedSignature === razorpay_signature;
+
+    if (!isAuthentic) {
+      console.error("Payment signature verification failed:");
+      console.error("Order ID:", razorpay_order_id);
+      console.error("Payment ID:", razorpay_payment_id);
+      console.error("Expected Signature:", expectedSignature);
+      console.error("Received Signature:", razorpay_signature);
+
+      return res.status(400).json({
+        success: false,
+        message: "Payment verification failed. Invalid signature.",
+        error: "Signature mismatch",
+      });
+    }
+
+    // Create payment entry in loan history
+    const paymentData = {
+      amount: paymentAmount,
+      paymentMode: "online",
+      paymentType: paymentType,
+      transactionId: razorpay_payment_id, // Store Razorpay payment ID in transactionId
+      notes: notes || `Online payment via Razorpay. Order ID: ${razorpay_order_id}. Payment ID: ${razorpay_payment_id}`,
+      paymentDate: new Date(),
+      paymentStatus: "pending", // Will be confirmed by lender
+      // Store Razorpay details (Mongoose will accept these even if not in schema)
+      razorpayOrderId: razorpay_order_id,
+      razorpayPaymentId: razorpay_payment_id,
+      razorpaySignature: razorpay_signature,
+    };
+
+    // Update loan payment mode if not set
+    if (!loan.paymentMode || loan.paymentMode === "cash") {
+      loan.paymentMode = "online";
+    }
+
+    // Update payment type
+    if (paymentType === "one-time") {
+      loan.paymentType = "one-time";
+    } else if (paymentType === "installment") {
+      loan.paymentType = "installment";
+      
+      // Calculate next due date based on frequency
+      if (loan.installmentPlan?.installmentFrequency === "monthly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+      } else if (loan.installmentPlan?.installmentFrequency === "weekly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      } else if (loan.installmentPlan?.installmentFrequency === "quarterly") {
+        loan.installmentPlan.nextDueDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+      }
+    }
+
+    // Add payment to history
+    loan.paymentHistory.push(paymentData);
+
+    // Set payment confirmation status
+    loan.paymentConfirmation = "pending";
+
+    await loan.save();
+
+    // Send notification to lender about pending payment confirmation
+    await sendLoanUpdateNotification(loan.aadhaarNumber, loan).catch(err => {
+      console.log("Notification skipped:", err.message);
+    });
+
+    // Populate loan details for response
+    const updatedLoan = await Loan.findById(loan._id)
+      .populate('lenderId', 'userName email mobileNo profileImage')
+      .populate({
+        path: 'borrowerId',
+        select: 'userName email mobileNo aadharCardNo',
+        strictPopulate: false
+      });
+
+    const remainingAmount = loan.remainingAmount || (loan.amount - (loan.totalPaid || 0));
+
+    return res.status(200).json({
+      success: true,
+      message: "Payment verified successfully. Payment is pending lender confirmation.",
+      data: {
+        loan: updatedLoan,
+        paymentDetails: {
+          razorpayOrderId: razorpay_order_id,
+          razorpayPaymentId: razorpay_payment_id,
+          amount: paymentAmount,
+          currency: "INR",
+          paymentType: paymentType,
+          paymentStatus: "pending_confirmation",
+        },
+        loanSummary: {
+          totalLoanAmount: loan.amount,
+          totalPaid: loan.totalPaid || 0,
+          remainingAmount: remainingAmount - paymentAmount,
+          currentPaymentAmount: paymentAmount,
+        },
+        nextStep: "Lender will confirm this payment. You will be notified once confirmed.",
+      },
+    });
+  } catch (error) {
+    console.error("Error verifying Razorpay payment:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * Get Installment History for a Loan
+ * Returns detailed installment history including paid, pending, and upcoming installments
+ */
+const getInstallmentHistory = async (req, res) => {
+  try {
+    const borrowerId = req.user.id;
+    const { loanId } = req.params;
+
+    // Find the loan
+    const loan = await Loan.findById(loanId)
+      .populate('lenderId', 'userName email mobileNo profileImage')
+      .populate({
+        path: 'borrowerId',
+        select: 'userName email mobileNo aadharCardNo',
+        strictPopulate: false
+      });
+
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    // Verify borrower owns this loan
+    const borrower = await User.findById(borrowerId);
+    if (!borrower || loan.aadhaarNumber !== borrower.aadharCardNo) {
+      return res.status(403).json({
+        success: false,
+        message: "You can only view installment history for your own loans",
+        code: "FORBIDDEN",
+      });
+    }
+
+    // Check if loan has installment plan
+    const isInstallmentLoan = loan.paymentType === "installment" || loan.installmentPlan?.totalInstallments > 1;
+    
+    if (!isInstallmentLoan) {
+      return res.status(400).json({
+        success: false,
+        message: "This loan is not an installment loan",
+      });
+    }
+
+    const installmentPlan = loan.installmentPlan || {};
+    const totalInstallments = installmentPlan.totalInstallments || 1;
+    const installmentAmount = installmentPlan.installmentAmount || loan.amount;
+    const frequency = installmentPlan.installmentFrequency || "monthly";
+    const loanStartDate = loan.loanStartDate || loan.loanGivenDate || loan.createdAt;
+
+    // Get all confirmed payments (these are the paid installments)
+    const confirmedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'confirmed');
+    const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
+    const rejectedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'rejected');
+
+    // Filter installment payments
+    const confirmedInstallments = confirmedPayments.filter(p => p.paymentType === 'installment');
+    const pendingInstallments = pendingPayments.filter(p => p.paymentType === 'installment');
+    const rejectedInstallments = rejectedPayments.filter(p => p.paymentType === 'installment');
+
+    // Calculate frequency in days
+    const frequencyDays = {
+      weekly: 7,
+      monthly: 30,
+      quarterly: 90
+    };
+    const daysToAdd = frequencyDays[frequency] || 30;
+
+    // Build complete installment schedule
+    const installmentSchedule = [];
+    const currentDate = new Date();
+    let paidInstallmentsCount = 0;
+
+    // Sort confirmed installments by payment date
+    confirmedInstallments.sort((a, b) => new Date(a.confirmedAt || a.paymentDate) - new Date(b.confirmedAt || b.paymentDate));
+
+    // Add paid installments
+    confirmedInstallments.forEach((payment, index) => {
+      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      installmentSchedule.push({
+        installmentNumber: paidInstallmentsCount + 1,
+        amount: payment.amount,
+        dueDate: dueDate,
+        status: "paid",
+        paidDate: payment.confirmedAt || payment.paymentDate,
+        paymentMode: payment.paymentMode,
+        transactionId: payment.transactionId,
+        notes: payment.notes,
+        isOnTime: new Date(payment.confirmedAt || payment.paymentDate) <= dueDate,
+        paymentId: payment._id,
+      });
+      paidInstallmentsCount++;
+    });
+
+    // Add pending installments
+    pendingInstallments.forEach((payment, index) => {
+      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      installmentSchedule.push({
+        installmentNumber: paidInstallmentsCount + 1,
+        amount: payment.amount,
+        dueDate: dueDate,
+        status: "pending",
+        submittedDate: payment.paymentDate,
+        paymentMode: payment.paymentMode,
+        transactionId: payment.transactionId,
+        notes: payment.notes,
+        paymentId: payment._id,
+      });
+      paidInstallmentsCount++;
+    });
+
+    // Add rejected installments
+    rejectedInstallments.forEach((payment, index) => {
+      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      installmentSchedule.push({
+        installmentNumber: paidInstallmentsCount + 1,
+        amount: payment.amount,
+        dueDate: dueDate,
+        status: "rejected",
+        rejectedDate: payment.confirmedAt || payment.paymentDate,
+        paymentMode: payment.paymentMode,
+        transactionId: payment.transactionId,
+        notes: payment.notes,
+        rejectionReason: payment.notes,
+        paymentId: payment._id,
+      });
+      paidInstallmentsCount++;
+    });
+
+    // Add upcoming installments (not yet paid or submitted)
+    while (installmentSchedule.length < totalInstallments) {
+      const installmentNumber = installmentSchedule.length + 1;
+      const dueDate = calculateDueDate(loanStartDate, installmentSchedule.length, daysToAdd);
+      const isOverdue = new Date(dueDate) < currentDate && installmentSchedule.length > 0;
+      
+      installmentSchedule.push({
+        installmentNumber: installmentNumber,
+        amount: installmentAmount,
+        dueDate: dueDate,
+        status: isOverdue ? "overdue" : "upcoming",
+        isOverdue: isOverdue,
+        overdueDays: isOverdue ? Math.floor((currentDate - dueDate) / (1000 * 60 * 60 * 24)) : 0,
+      });
+    }
+
+    // Calculate summary statistics
+    const paidInstallments = installmentSchedule.filter(i => i.status === 'paid');
+    const pendingInstallmentsCount = installmentSchedule.filter(i => i.status === 'pending').length;
+    const overdueInstallments = installmentSchedule.filter(i => i.status === 'overdue' || (i.status === 'upcoming' && i.isOverdue));
+    const upcomingInstallments = installmentSchedule.filter(i => i.status === 'upcoming' && !i.isOverdue);
+
+    const totalPaidAmount = paidInstallments.reduce((sum, i) => sum + (i.amount || 0), 0);
+    const totalPendingAmount = pendingInstallments.reduce((sum, p) => sum + (p.amount || 0), 0);
+    const totalOverdueAmount = overdueInstallments.reduce((sum, i) => sum + (i.amount || 0), 0);
+
+    // Calculate on-time payment rate
+    const onTimePayments = paidInstallments.filter(i => i.isOnTime).length;
+    const onTimeRate = paidInstallments.length > 0 
+      ? parseFloat(((onTimePayments / paidInstallments.length) * 100).toFixed(2))
+      : 0;
+
+    return res.status(200).json({
+      success: true,
+      message: "Installment history retrieved successfully",
+      data: {
+        loanId: loan._id,
+        loanDetails: {
+          loanName: loan.name,
+          totalLoanAmount: loan.amount,
+          totalPaidAmount: loan.totalPaid || 0,
+          remainingAmount: loan.remainingAmount || (loan.amount - (loan.totalPaid || 0)),
+          loanStatus: loan.paymentStatus,
+        },
+        installmentPlan: {
+          totalInstallments: totalInstallments,
+          paidInstallments: paidInstallments.length,
+          pendingInstallments: pendingInstallmentsCount,
+          overdueInstallments: overdueInstallments.length,
+          upcomingInstallments: upcomingInstallments.length,
+          installmentAmount: installmentAmount,
+          frequency: frequency,
+          nextDueDate: installmentPlan.nextDueDate || calculateDueDate(loanStartDate, paidInstallments.length, daysToAdd),
+        },
+        summary: {
+          totalPaidAmount: totalPaidAmount,
+          totalPendingAmount: totalPendingAmount,
+          totalOverdueAmount: totalOverdueAmount,
+          totalRemainingAmount: loan.remainingAmount || (loan.amount - (loan.totalPaid || 0)),
+          onTimePayments: onTimePayments,
+          totalPaidInstallments: paidInstallments.length,
+          onTimePaymentRate: onTimeRate,
+        },
+        installmentHistory: installmentSchedule,
+        lenderInfo: {
+          lenderName: loan.lenderId?.userName || "Lender",
+          lenderPhone: loan.lenderId?.mobileNo || "Contact lender",
+          lenderEmail: loan.lenderId?.email || "Contact lender",
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error retrieving installment history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+// Helper function to calculate due date for an installment
+function calculateDueDate(startDate, installmentIndex, daysToAdd) {
+  const start = new Date(startDate);
+  const dueDate = new Date(start);
+  dueDate.setDate(dueDate.getDate() + (installmentIndex * daysToAdd));
+  return dueDate;
+}
+
 module.exports = {
   getLoanByAadhaar,
   updateLoanAcceptanceStatus,
@@ -782,4 +1472,8 @@ module.exports = {
   getPaymentHistory,
   getMyLoans,
   getBorrowerStatistics,
+  getBorrowerRecentActivities,
+  createRazorpayOrderForPayment,
+  verifyRazorpayPayment,
+  getInstallmentHistory,
 };
