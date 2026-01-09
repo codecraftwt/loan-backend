@@ -25,7 +25,7 @@ app.use(cors());
 app.use(express.json());
 
 app.use("/api/auth", AuthRoutes);
-app.use("/api/loan", LoanRoutes); // Keep for backward compatibility
+app.use("/api/loan", LoanRoutes);
 app.use("/api/user", UserRoutes);
 app.use("/api/borrower", BorrowerRoutes);
 app.use("/api/lender/loans", LenderLoanRoutes);

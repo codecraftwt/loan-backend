@@ -93,8 +93,6 @@ cron.schedule('0 10 * * *', async () => {
                 console.error(`Error processing borrower ${borrower._id}:`, borrowerError);
             }
         }
-
-        // console.log(`Fraud detection cron job completed. Updated: ${updatedCount}, Notified: ${notifiedCount}`);
     } catch (error) {
         console.error('Error in fraud detection cron job:', error);
     }
@@ -146,8 +144,6 @@ cron.schedule('0 10 * * *', async () => {
                 console.error(`Error sending overdue notifications for loan ${loan._id}:`, loanError);
             }
         }
-
-        console.log(`Overdue loan notifications sent. Lenders: ${lenderNotifiedCount}, Borrowers: ${borrowerNotifiedCount}`);
     } catch (error) {
         console.error('Error in overdue loan notification cron job:', error);
     }
@@ -193,8 +189,6 @@ cron.schedule('0 11 * * *', async () => {
                 console.error(`Error sending pending payment notification for loan ${loan._id}:`, loanError);
             }
         }
-
-        console.log(`Pending payment notifications sent to ${notifiedCount} lenders`);
     } catch (error) {
         console.error('Error in pending payment notification cron job:', error);
     }
@@ -243,8 +237,6 @@ cron.schedule('0 12 * * *', async () => {
                 console.error(`Error sending pending loan notification for loan ${loan._id}:`, loanError);
             }
         }
-
-        console.log(`Pending loan notifications sent. Lenders: ${lenderNotifiedCount}, Borrowers: ${borrowerNotifiedCount}`);
     } catch (error) {
         console.error('Error in pending loan notification cron job:', error);
     }
@@ -286,8 +278,6 @@ cron.schedule('0 9 * * *', async () => {
                 console.error(`Error sending subscription reminder to lender ${lender._id}:`, lenderError);
             }
         }
-
-        console.log(`Subscription reminder notifications sent to ${notifiedCount} lenders`);
     } catch (error) {
         console.error('Error in subscription reminder cron job:', error);
     }

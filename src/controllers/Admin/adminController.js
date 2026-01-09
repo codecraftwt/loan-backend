@@ -442,7 +442,7 @@ const getLendersWithPlans = async (req, res) => {
 
     // Build query - only lenders (roleId: 1) who have purchased a plan
     const query = {
-      roleId: 1, // Only lenders
+      roleId: 1,
       currentPlanId: { $exists: true, $ne: null }, // Must have a plan purchased
     };
 
@@ -502,7 +502,7 @@ const getLendersWithPlans = async (req, res) => {
           select: "planName description duration priceMonthly planFeatures isActive",
         },
       ],
-      select: "-password -deviceTokens -fraudDetection", // Exclude sensitive data
+      select: "-password -deviceTokens -fraudDetection",
     };
 
     // Get paginated results
