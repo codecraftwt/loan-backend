@@ -242,6 +242,10 @@ const loanSchema = new mongoose.Schema(
     profileImage: {
       type: String,
     },
+    proof: {
+      type: String,
+      default: null,
+    },
   },
   { timestamps: true }
 );

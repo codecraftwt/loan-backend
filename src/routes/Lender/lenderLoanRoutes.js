@@ -22,6 +22,7 @@ const {
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
 const checkActivePlan = require("../../middlewares/checkActivePlan");
+const upload = require("../../config/multerConfig");
 
 const router = express.Router();
 
@@ -38,7 +39,8 @@ router.get('/reputation/:aadhaarNumber', authenticateUser, checkLender, getBorro
 router.get('/risk-assessment/:aadhaarNumber', authenticateUser, checkLender, getBorrowerRiskAssessment);
 
 // Create loan (only lenders can create loans for borrowers) - requires active plan
-router.post("/create", authenticateUser, checkLender, checkActivePlan, createLoan);
+// Optional proof file upload using multer
+router.post("/create", authenticateUser, checkLender, checkActivePlan, upload.single("proof"), createLoan);
 
 // Verify Razorpay payment for loan creation (only for online payments)
 router.post("/verify-payment", authenticateUser, checkLender, verifyLoanPayment);

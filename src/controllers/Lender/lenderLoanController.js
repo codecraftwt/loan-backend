@@ -10,6 +10,7 @@ const razorpayInstance = require("../../config/razorpay.config");
 const crypto = require("crypto");
 const { getBorrowerReputation } = require("../../services/reputationScoringService");
 const { getFraudDetails } = require("../../services/fraudDetectionService");
+const cloudinary = require("../../config/cloudinaryConfig");
 
 const createLoan = async (req, res) => {
   try {
@@ -73,6 +74,37 @@ const createLoan = async (req, res) => {
     const otp = "1234";
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
+    // Handle optional proof file upload
+    let proofUrl = null;
+    if (req.file) {
+      try {
+        const uploadResult = await new Promise((resolve, reject) => {
+          const stream = cloudinary.uploader.upload_stream(
+            {
+              folder: "Loan_proofs",
+              resource_type: "image",
+            },
+            (error, result) => {
+              if (error) {
+                reject(error);
+              } else {
+                resolve(result);
+              }
+            }
+          );
+          stream.end(req.file.buffer);
+        });
+        proofUrl = uploadResult.secure_url;
+      } catch (uploadError) {
+        console.error("Error uploading proof to Cloudinary:", uploadError);
+        return res.status(500).json({
+          success: false,
+          message: "Error uploading proof file",
+          error: uploadError.message,
+        });
+      }
+    }
+
     // Initialize Razorpay order data
     let razorpayOrderData = null;
 
@@ -132,6 +164,7 @@ const createLoan = async (req, res) => {
       loanConfirmed: false, // Will be true after OTP verification
       paymentStatus: "pending", // Status remains "pending" until OTP is verified and beyond
       borrowerAcceptanceStatus: "pending", // For borrower to accept/reject loan
+      proof: proofUrl, // Include proof URL if uploaded
       ...razorpayOrderData, // Include Razorpay order data if online payment
     });
 
