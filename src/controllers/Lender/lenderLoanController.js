@@ -1,7 +1,6 @@
 const Loan = require("../../models/Loan");
 const User = require("../../models/User");
 const {
-  sendLoanStatusNotification,
   sendLoanUpdateNotification,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
@@ -67,9 +66,6 @@ const createLoan = async (req, res) => {
       });
     }
 
-    // Verify loan belongs to the authenticated lender
-    // (This check is implicit since lenderId comes from req.user.id)
-
     // Generate OTP (static for now - 1234)
     const otp = "1234";
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
@@ -116,7 +112,7 @@ const createLoan = async (req, res) => {
         const receiptId = `loan_${shortLoanId}_${timestamp.toString().slice(-6)}`;
 
         const options = {
-          amount: LoanData.amount * 100, // Convert to paise
+          amount: LoanData.amount * 100,
           currency: "INR",
           receipt: receiptId,
           notes: {
@@ -372,7 +368,7 @@ const editLoan = async (req, res) => {
 
     // Reset borrower acceptance status and loan confirmation when loan is edited
     updatedData.borrowerAcceptanceStatus = "pending";
-    updatedData.loanConfirmed = false; // Reset confirmation when loan is edited
+    updatedData.loanConfirmed = false;
     
     // Generate new OTP if loan is being edited
     updatedData.otp = "1234";
@@ -1773,17 +1769,17 @@ const getBorrowerRiskAssessment = async (req, res) => {
 // Helper function to get badge color based on risk level
 function getRiskBadgeColor(riskLevel) {
   const colors = {
-    low: "#10b981",      // Green
-    medium: "#f59e0b",    // Amber/Orange
-    high: "#ef4444",     // Red
-    critical: "#dc2626",  // Dark Red
+    low: "#10b981",
+    medium: "#f59e0b",
+    high: "#ef4444",
+    critical: "#dc2626",
   };
-  return colors[riskLevel] || "#6b7280"; // Default gray
+  return colors[riskLevel] || "#6b7280";
 }
 
 module.exports = {
   createLoan,
-  AddLoan: createLoan, // Keep for backward compatibility
+  AddLoan: createLoan,
   verifyLoanPayment,
   getBorrowerReputationByAadhaar,
   verifyOTPAndConfirmLoan,
@@ -1791,7 +1787,7 @@ module.exports = {
   getLoansByLender,
   GetLoanDetails,
   editLoan,
-  updateLoanDetails: editLoan, // Keep for backward compatibility
+  updateLoanDetails: editLoan,
   updateLoanStatus,
   deleteLoanDetails,
   getLoanStats,

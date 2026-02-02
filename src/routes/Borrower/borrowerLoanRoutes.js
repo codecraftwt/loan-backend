@@ -91,4 +91,3 @@ router.get("/payment-history/:loanId", getPaymentHistory);
 router.get("/installment-history/:loanId", authenticateUser, checkBorrower, getInstallmentHistory);
 
 module.exports = router;
-

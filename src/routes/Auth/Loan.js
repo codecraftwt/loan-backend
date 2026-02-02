@@ -27,8 +27,6 @@ router.get("/get-loan-by-aadhar", getLoanByAadhaar);
 
 router.get("/get-loan-by-id", authenticateUser, getLoansById);
 
-// router.get("/get-loan", ShowAllLoan);
-
 router.get("/get-loan", GetLoanDetails);
 
 router.get("/loan-stats", authenticateUser, getLoanStats);

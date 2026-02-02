@@ -192,9 +192,29 @@ const makeLoanPayment = async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!paymentMode || !paymentType || !amount) {
+    if (!paymentMode || !paymentType) {
       return res.status(400).json({
-        message: "Payment mode, payment type, and amount are required",
+        message: "Payment mode and payment type are required",
+      });
+    }
+
+    // Validate amount - required and must be a valid positive number
+    if (amount === undefined || amount === null || amount === "") {
+      return res.status(400).json({
+        message: "Payment amount is required",
+      });
+    }
+
+    const paymentAmount = Number(amount);
+    if (Number.isNaN(paymentAmount)) {
+      return res.status(400).json({
+        message: "Payment amount must be a valid number",
+      });
+    }
+
+    if (paymentAmount <= 0) {
+      return res.status(400).json({
+        message: "Payment amount must be greater than 0",
       });
     }
 
@@ -209,6 +229,16 @@ const makeLoanPayment = async (req, res) => {
       return res.status(400).json({
         message: "Invalid payment type. Must be 'one-time' or 'installment'",
       });
+    }
+
+    // For installment payments, validate installmentNumber if loan has installment plan
+    if (paymentType === "installment" && installmentNumber !== undefined && installmentNumber !== null && installmentNumber !== "") {
+      const installmentNum = Number(installmentNumber);
+      if (!Number.isInteger(installmentNum) || installmentNum < 1) {
+        return res.status(400).json({
+          message: "Installment number must be a positive integer",
+        });
+      }
     }
 
     // Find the loan
@@ -232,15 +262,17 @@ const makeLoanPayment = async (req, res) => {
       });
     }
 
-    // Validate payment amount
-    if (amount <= 0) {
+    // Validate payment amount doesn't exceed remaining amount
+    const remainingAmount = loan.remainingAmount ?? (Number(loan.amount) - (Number(loan.totalPaid) || 0));
+    if (paymentAmount > remainingAmount) {
       return res.status(400).json({
-        message: "Payment amount must be greater than 0",
+        message: `Payment amount (₹${paymentAmount}) cannot exceed remaining loan amount (₹${remainingAmount})`,
+        remainingAmount,
       });
     }
 
     let paymentData = {
-      amount: Number(amount), // Ensure it's a number
+      amount: paymentAmount, // Use validated amount
       paymentMode,
       paymentType,
       installmentNumber: installmentNumber ? Number(installmentNumber) : null,
@@ -322,7 +354,6 @@ const makeLoanPayment = async (req, res) => {
     // Calculate what totals would be after confirmation (for display only)
     const currentTotalPaid = Number(loan.totalPaid) || 0;
     const loanAmount = Number(loan.amount) || 0;
-    const paymentAmount = Number(amount) || 0;
 
     const projectedTotalPaid = currentTotalPaid + paymentAmount;
     const projectedRemainingAmount = loanAmount - projectedTotalPaid;
@@ -964,7 +995,7 @@ const createRazorpayOrderForPayment = async (req, res) => {
     const { amount, paymentType = "one-time" } = req.body;
 
     // Validate required fields
-    if (!amount) {
+    if (amount === undefined || amount === null || amount === "") {
       return res.status(400).json({
         success: false,
         message: "Payment amount is required",
@@ -980,6 +1011,13 @@ const createRazorpayOrderForPayment = async (req, res) => {
 
     // Validate amount
     const paymentAmount = Number(amount);
+    if (Number.isNaN(paymentAmount)) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount must be a valid number",
+      });
+    }
+
     if (paymentAmount <= 0) {
       return res.status(400).json({
         success: false,
@@ -1111,10 +1149,17 @@ const verifyRazorpayPayment = async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature || !amount) {
+    if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields: razorpay_payment_id, razorpay_order_id, razorpay_signature, amount",
+        message: "Missing required fields: razorpay_payment_id, razorpay_order_id, razorpay_signature",
+      });
+    }
+
+    if (amount === undefined || amount === null || amount === "") {
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount is required",
       });
     }
 
@@ -1126,6 +1171,19 @@ const verifyRazorpayPayment = async (req, res) => {
     }
 
     const paymentAmount = Number(amount);
+    if (Number.isNaN(paymentAmount)) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount must be a valid number",
+      });
+    }
+
+    if (paymentAmount <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Payment amount must be greater than 0",
+      });
+    }
 
     // Find the loan
     const loan = await Loan.findById(loanId);
@@ -1151,6 +1209,16 @@ const verifyRazorpayPayment = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "This loan is already fully paid",
+      });
+    }
+
+    // Validate payment amount doesn't exceed remaining amount
+    const remainingAmount = loan.remainingAmount ?? (Number(loan.amount) - (Number(loan.totalPaid) || 0));
+    if (paymentAmount > remainingAmount) {
+      return res.status(400).json({
+        success: false,
+        message: `Payment amount (₹${paymentAmount}) cannot exceed remaining loan amount (₹${remainingAmount})`,
+        remainingAmount,
       });
     }
 
@@ -1236,8 +1304,6 @@ const verifyRazorpayPayment = async (req, res) => {
         select: 'userName email mobileNo aadharCardNo',
         strictPopulate: false
       });
-
-    const remainingAmount = loan.remainingAmount || (loan.amount - (loan.totalPaid || 0));
 
     return res.status(200).json({
       success: true,

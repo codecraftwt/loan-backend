@@ -1,5 +1,3 @@
-
-
 // Helper function to validate if the input is a valid email
 function validateEmail(email) {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

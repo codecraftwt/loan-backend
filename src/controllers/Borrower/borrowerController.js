@@ -14,7 +14,7 @@ const getAllBorrowers = async (req, res) => {
 
     const options = {
       sort: { createdAt: -1 },
-      select: "-password", // Exclude password from response
+      select: "-password",
     };
 
     const { data: borrowers, pagination } = await paginateQuery(

@@ -24,7 +24,7 @@ const getAllBorrowersHistory = async (req, res) => {
 
     // Add name search if provided
     if (search) {
-      query.name = { $regex: search, $options: 'i' }; // Case-insensitive search
+      query.name = { $regex: search, $options: 'i' };
     }
 
     // Create options for paginateQuery with population
@@ -38,7 +38,7 @@ const getAllBorrowersHistory = async (req, res) => {
         {
           path: 'borrowerId',
           select: 'userName email mobileNo profileImage aadharCardNo',
-          strictPopulate: false, // Allow populate even if borrowerId is null
+          strictPopulate: false,
         }
       ]
     };

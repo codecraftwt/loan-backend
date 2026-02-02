@@ -1,54 +1,12 @@
 const jwt = require("jsonwebtoken");
 const User = require("../../models/User");
 const bcrypt = require("bcryptjs");
-const crypto = require("crypto");
-// const twilio = require("twilio");
 const { sendVerificationEmail } = require("../../utils/mailer");
 const {
   validateEmail,
   normalizeIndianMobile,
 } = require("../../utils/authHelpers");
 const cloudinary = require("../../config/cloudinaryConfig");
-
-// Commented out Twilio configuration
-// const twilioAccountSid = process.env.TWILIO_ACCOUNT_SID;
-// const twilioAuthToken = process.env.TWILIO_AUTH_TOKEN;
-// const twilioClient =
-//   twilioAccountSid && twilioAuthToken
-//     ? twilio(twilioAccountSid, twilioAuthToken)
-//     : null;
-
-// In-memory store for pending signups awaiting OTP verification
-// const pendingSignups = {};
-
-// Commented out Twilio functions
-// function assertTwilioConfig() {
-//   if (!twilioAccountSid || !twilioAuthToken) {
-//     throw new Error(
-//       "Twilio config missing. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN"
-//     );
-//   }
-//   if (!twilioClient) {
-//     throw new Error("Twilio client is not initialized");
-//   }
-// }
-
-// async function sendTwilioOtp(phoneNumber, code) {
-//   assertTwilioConfig();
-//   const from = process.env.TWILIO_FROM_NUMBER;
-//   if (!from) {
-//     console.warn(
-//       "TWILIO_FROM_NUMBER not set. OTP will not be sent via SMS, only returned in response."
-//     );
-//     return null;
-//   }
-
-//   return twilioClient.messages.create({
-//     body: `Your verification code is ${code}`,
-//     to: phoneNumber,
-//     from,
-//   });
-// }
 
 // Signup - create user directly without OTP verification
 const signupUser = async (req, res) => {
@@ -292,144 +250,6 @@ const signInUser = async (req, res) => {
   }
 };
 
-// Commented out sendMobileOtp function
-// const sendMobileOtp = async (req, res) => {
-//   const { mobileNo } = req.body;
-
-//   try {
-//     const normalizedMobile = normalizeIndianMobile(mobileNo);
-//     if (!normalizedMobile) {
-//       return res
-//         .status(400)
-//         .json({ message: "Please provide a valid Indian mobile number" });
-//     }
-
-//     const alreadyExists = await User.findOne({
-//       mobileNo: normalizedMobile.e164,
-//     });
-//     if (alreadyExists) {
-//       return res
-//         .status(400)
-//         .json({ message: "Mobile number is already registered" });
-//     }
-
-//     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-//     await sendTwilioOtp(normalizedMobile.e164, otp);
-
-//     return res.status(200).json({
-//       message: "OTP sent successfully",
-//       mobileNo: normalizedMobile.e164,
-//       otp, // for development/testing only
-//     });
-//   } catch (error) {
-//     console.error("Error sending mobile OTP:", error);
-//     return res.status(500).json({
-//       message: "Unable to send OTP",
-//       error: error.message,
-//     });
-//   }
-// };
-
-// Commented out verifySignupOtp function
-// Step 2: Verify OTP and create the user
-// const verifySignupOtp = async (req, res) => {
-//   const { mobileNo, otp } = req.body;
-
-//   try {
-//     if (!mobileNo || !otp) {
-//       return res
-//         .status(400)
-//         .json({ message: "mobileNo and otp are required" });
-//     }
-
-//     const normalizedMobile = normalizeIndianMobile(mobileNo);
-//     if (!normalizedMobile) {
-//       return res
-//         .status(400)
-//         .json({ message: "Please provide a valid Indian mobile number" });
-//     }
-
-//     const pending = pendingSignups[normalizedMobile.e164];
-//     if (!pending) {
-//       return res
-//         .status(400)
-//         .json({ message: "No pending signup for provided mobile number" });
-//     }
-
-//     if (pending.otp !== otp) {
-//       return res
-//         .status(400)
-//         .json({ message: "OTP verification failed or code is invalid" });
-//     }
-
-//     // Double-check uniqueness at verification time
-//     const checks = await Promise.all([
-//       pending.email ? User.findOne({ email: pending.email }) : null,
-//       User.findOne({ mobileNo: pending.mobileNo }),
-//       User.findOne({ aadharCardNo: pending.aadharCardNo }),
-//       User.findOne({ userName: pending.userName }),
-//       pending.panCardNumber
-//         ? User.findOne({ panCardNumber: pending.panCardNumber })
-//         : null,
-//     ]);
-
-//     const [userExists, mobileExists, aadharExists, userNameExists, panExists] =
-//       checks;
-
-//     if (userExists) {
-//       return res
-//         .status(400)
-//         .json({ message: "User with this email already exists" });
-//     }
-//     if (mobileExists) {
-//       return res
-//         .status(400)
-//         .json({ message: "Mobile number is already in use" });
-//     }
-//     if (aadharExists) {
-//       return res
-//         .status(400)
-//         .json({ message: "Aadhar card number is already registered" });
-//     }
-//     if (userNameExists) {
-//       return res.status(400).json({ message: "Username is already taken" });
-//     }
-//     if (panExists) {
-//       return res.status(400).json({ message: "PAN card number is in use" });
-//     }
-
-//     const newUser = new User({
-//       ...pending,
-//       isMobileVerified: true,
-//     });
-
-//     await newUser.save();
-//     delete pendingSignups[normalizedMobile.e164];
-
-//     return res.status(201).json({
-//       message: "User registered successfully",
-//       user: {
-//         _id: newUser._id,
-//         email: newUser.email,
-//         userName: newUser.userName,
-//         address: newUser.address,
-//         aadharCardNo: newUser.aadharCardNo,
-//         mobileNo: newUser.mobileNo,
-//         panCardNumber: newUser.panCardNumber,
-//         profileImage: newUser.profileImage,
-//         roleId: newUser.roleId,
-//         isMobileVerified: newUser.isMobileVerified,
-//       },
-//     });
-//   } catch (error) {
-//     console.error("Error in verifySignupOtp:", error);
-//     return res.status(500).json({
-//       message: "Unable to verify OTP",
-//       error: error.message,
-//     });
-//   }
-// };
-
 let verificationCodes = {};
 
 const requestPasswordReset = async (req, res) => {
@@ -451,13 +271,25 @@ const requestPasswordReset = async (req, res) => {
     verificationCodes[email] = otp;
 
     // Send OTP email to the user
-    await sendVerificationEmail(email, otp);
+    try {
+      await sendVerificationEmail(email, otp);
+    } catch (emailError) {
+      console.error("Failed to send email:", emailError);
+      return res.status(500).json({ 
+        message: "Failed to send verification email. Please check email configuration.",
+        error: emailError.message,
+        otp
+      });
+    }
 
-    // Respond to the user
-    res.status(200).json({ message: "Verification code sent to your email" });
+    // Respond to the user (including OTP for development/testing)
+    res.status(200).json({ 
+      message: "Verification code sent to your email",
+      otp
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error", error: error.message });
   }
 };
 
@@ -516,6 +348,4 @@ module.exports = {
   requestPasswordReset,
   resetPassword,
   verifyOtp,
-  // sendMobileOtp, // Commented out
-  // verifySignupOtp, // Commented out
 };

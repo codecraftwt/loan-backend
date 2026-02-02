@@ -22,4 +22,3 @@ router.get("/borrowers/:id", authenticateUser, getBorrowerById);
 router.use("/loans", borrowerLoanRoutes);
 
 module.exports = router;
-

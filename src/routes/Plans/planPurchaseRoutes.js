@@ -14,4 +14,3 @@ router.post("/purchase/verify", authenticateUser, checkLender, verifyPaymentAndA
 router.get("/active", authenticateUser, checkLender, getActivePlan);
 
 module.exports = router;
-

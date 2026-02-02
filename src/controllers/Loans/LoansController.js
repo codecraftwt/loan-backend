@@ -79,74 +79,6 @@ const AddLoan = async (req, res) => {
   }
 };
 
-
-// const AddLoan = async (req, res) => {
-//   try {
-//     const lenderId = req.user.id;
-//     const LoanData = req.body;
-
-//     // First, find the lender (current user) to get their Aadhaar number
-//     const lender = await User.findById(lenderId);
-//     if (!lender) {
-//       return res.status(404).json({
-//         message: "Lender not found",
-//       });
-//     }
-
-//     // Check if the lender is trying to give loan to themselves
-//     if (lender.aadharCardNo === LoanData.aadharCardNo) {
-//       return res.status(400).json({
-//         message: "You cannot give a loan to yourself",
-//       });
-//     }
-
-//     // Find the borrower by Aadhaar number
-//     const borrower = await User.findOne({
-//       aadharCardNo: LoanData.aadharCardNo,
-//     });
-
-//     if (!borrower) {
-//       return res.status(404).json({
-//         message: "User with the provided Aadhar number does not exist",
-//       });
-//     }
-
-//     const createLoan = new Loan({
-//       ...LoanData,
-//       lenderId,
-//       aadhaarNumber: LoanData.aadharCardNo,
-//       borrowerId: borrower._id,
-//     });
-
-//     const agreementText = generateLoanAgreement(createLoan, req.user);
-//     createLoan.agreement = agreementText;
-
-//     await createLoan.save();
-
-//     await sendLoanUpdateNotification(LoanData.aadharCardNo, LoanData);
-
-//     return res.status(201).json({
-//       message: "Loan created successfully",
-//       data: createLoan,
-//     });
-//   } catch (error) {
-//     if (error.name === "ValidationError") {
-//       const errorMessages = Object.values(error.errors).map(
-//         (err) => err.message
-//       );
-//       return res.status(400).json({
-//         message: "Validation error",
-//         errors: errorMessages,
-//       });
-//     }
-
-//     return res.status(500).json({
-//       message: "Server Error",
-//       error: error.message,
-//     });
-//   }
-// };
-
 const ShowAllLoan = async (req, res) => {
   try {
     const allLoans = await Loan.find();
@@ -720,9 +652,9 @@ const checkAndUpdateOverdueLoans = async () => {
     const overdueLoans = await Loan.find({
       loanEndDate: { $lt: currentDate },
       remainingAmount: { $gt: 0 },
-      paymentStatus: { $ne: "paid" }, // Not already fully paid
-      loanConfirmed: true, // Only confirmed loans
-      borrowerAcceptanceStatus: "accepted" // Only accepted loans
+      paymentStatus: { $ne: "paid" },
+      loanConfirmed: true,
+      borrowerAcceptanceStatus: "accepted"
     });
 
     let updatedCount = 0;

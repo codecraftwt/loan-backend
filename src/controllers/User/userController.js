@@ -1,14 +1,13 @@
 const User = require("../../models/User");
 const Loan = require("../../models/Loan");
 const cloudinary = require("../../config/cloudinaryConfig");
-// const { default: mongoose } = require("mongoose");
 const { sendMobileNumberChangeNotification } = require("../../services/notificationService");
 const { normalizeIndianMobile } = require("../../utils/authHelpers");
 
 // Update Profile API
 const updateProfile = async (req, res) => {
   const { userName, email, mobileNo, address } = req.body.userData;
-  const userId = req.user.id; // Get user ID from the decoded token
+  const userId = req.user.id;
 
   try {
     // Find the user by ID
