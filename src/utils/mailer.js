@@ -27,23 +27,25 @@ if (process.env.RESEND_API_KEY) {
 
 const resend = process.env.RESEND_API_KEY ? new Resend(process.env.RESEND_API_KEY) : null;
 
-// Resend free sender (no domain verification needed)
-const RESEND_FROM = "Loan App <onboarding@resend.dev>";
+// Sender display name (used with Gmail; optional for Resend)
+const MAIL_FROM_NAME = (process.env.MAIL_FROM_NAME || "CodeCraft WT").trim();
+// Resend "from": use RESEND_FROM if set, else "Display Name <onboarding@resend.dev>" (Resend cannot use @gmail.com)
+const RESEND_FROM = (process.env.RESEND_FROM || "").trim() || `${MAIL_FROM_NAME} <onboarding@resend.dev>`;
 
 // --- Nodemailer (Gmail SMTP) ---
-// .env: EMAIL (or GMAIL_EMAIL) and EMAIL_PASSWORD (or GMAIL_APP_PASSWORD). Use Gmail App Password.
+// Prefer Gmail when both Gmail and Resend are set (Gmail delivers more reliably locally).
 const gmailConfig = getGmailConfig();
-const transporter =
-  !resend && gmailConfig.email && gmailConfig.password
-    ? nodemailer.createTransport({
-        service: process.env.EMAIL_SERVICE || "gmail",
-        auth: {
-          user: gmailConfig.email,
-          pass: gmailConfig.password,
-        },
-        secure: true,
-      })
-    : null;
+const hasGmail = !!(gmailConfig.email && gmailConfig.password);
+const transporter = hasGmail
+  ? nodemailer.createTransport({
+      service: process.env.EMAIL_SERVICE || "gmail",
+      auth: {
+        user: gmailConfig.email,
+        pass: gmailConfig.password,
+      },
+      secure: true,
+    })
+  : null;
 
 if (transporter) {
   transporter.verify(function () {});
@@ -52,43 +54,51 @@ if (transporter) {
 const sendVerificationEmail = async (to, code) => {
   const subject = "Password Reset Verification Code";
   const text = `Your verification code is: ${code}. This code is valid for a limited time.`;
+  const html = `
+    <p>Your verification code is: <strong>${code}</strong></p>
+    <p>This code is valid for a limited time. Do not share it with anyone.</p>
+  `.trim();
 
-  // Prefer Resend (free, no Gmail/App Password)
+  // Prefer Gmail when configured — sends from your Gmail (e.g. codecraftwt@gmail.com)
+  if (transporter) {
+    const fromAddress = gmailConfig.email.includes("@") ? `${MAIL_FROM_NAME} <${gmailConfig.email}>` : gmailConfig.email;
+    const info = await transporter.sendMail({
+      from: fromAddress,
+      to,
+      subject,
+      text,
+      html,
+    });
+    return info;
+  }
+
   if (resend) {
     const { data, error } = await resend.emails.send({
       from: RESEND_FROM,
       to: [to],
       subject,
       text,
+      html,
     });
     if (error) {
-      // console.error("Resend send failed:", error.message);
       throw new Error(error.message);
+    }
+    if (data?.id) {
+      console.log("[Resend] Email sent. Id:", data.id, "To:", to);
     }
     return data;
   }
 
-  // Fallback: Gmail via Nodemailer
-  if (!transporter) {
-    const { email: cfgEmail, password: cfgPass } = getGmailConfig();
-    const missing = [];
-    if (!cfgEmail) missing.push("EMAIL");
-    if (!cfgPass) missing.push("EMAIL_PASSWORD (or GMAIL_APP_PASSWORD)");
-    const err = new Error(
-      "Email not configured. In .env (project root) add exactly: EMAIL=your@gmail.com and EMAIL_PASSWORD=your16charapppassword (no spaces around =). Missing: " +
-        missing.join(", ")
-    );
-    err.code = "EMAIL_NOT_CONFIGURED";
-    throw err;
-  }
-
-  const info = await transporter.sendMail({
-    from: gmailConfig.email,
-    to,
-    subject,
-    text,
-  });
-  return info;
+  const { email: cfgEmail, password: cfgPass } = getGmailConfig();
+  const missing = [];
+  if (!cfgEmail) missing.push("EMAIL");
+  if (!cfgPass) missing.push("EMAIL_PASSWORD (or GMAIL_APP_PASSWORD)");
+  const err = new Error(
+    "Email not configured. In .env add EMAIL + EMAIL_PASSWORD (Gmail) or RESEND_API_KEY. Missing: " +
+      missing.join(", ")
+  );
+  err.code = "EMAIL_NOT_CONFIGURED";
+  throw err;
 };
 
 module.exports = { sendVerificationEmail };
