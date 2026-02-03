@@ -256,8 +256,18 @@ const requestPasswordReset = async (req, res) => {
   const { email } = req.body;
 
   try {
-    // Check if the user exists
-    const user = await User.findOne({ email });
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ message: "Email is required." });
+    }
+
+    // Normalize email to match DB (User model stores email as lowercase)
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!validateEmail(normalizedEmail)) {
+      return res.status(400).json({ message: "Please provide a valid email address." });
+    }
+
+    // Check if the user exists (use normalized email)
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res
         .status(404)
@@ -267,28 +277,25 @@ const requestPasswordReset = async (req, res) => {
     // Generate a 6-digit OTP (One-Time Password)
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
 
-    // Store OTP temporarily (or you can store in the DB for persistence)
-    verificationCodes[email] = otp;
+    // Store OTP by normalized email so verify/reset can find it
+    verificationCodes[normalizedEmail] = otp;
 
-    // Send OTP email to the user
+    // Send OTP to the user's stored email address
     try {
-      await sendVerificationEmail(email, otp);
+      await sendVerificationEmail(user.email, otp);
     } catch (emailError) {
       console.error("Failed to send email:", emailError);
-      return res.status(500).json({ 
-        message: "Failed to send verification email. Please check email configuration.",
+      return res.status(500).json({
+        message: "Failed to send verification email. Please try again later or contact support.",
         error: emailError.message,
-        otp
       });
     }
 
-    // Respond to the user (including OTP for development/testing)
-    res.status(200).json({ 
+    res.status(200).json({
       message: "Verification code sent to your email",
-      otp
     });
   } catch (error) {
-    console.error(error);
+    console.error("requestPasswordReset error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -297,12 +304,15 @@ const verifyOtp = async (req, res) => {
   const { email, otp } = req.body;
 
   try {
+    if (!email || !otp) {
+      return res.status(400).json({ message: "Email and OTP are required." });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
     // Check if the OTP matches the stored OTP for this email
-    if (verificationCodes[email] !== otp) {
+    if (verificationCodes[normalizedEmail] !== otp) {
       return res.status(400).json({ message: "Invalid verification code" });
     }
 
-    // If OTP is valid, proceed to reset the password.
     res.status(200).json({ message: "OTP verified successfully" });
   } catch (error) {
     console.error(error);
@@ -314,13 +324,17 @@ const resetPassword = async (req, res) => {
   const { email, otp, newPassword } = req.body;
 
   try {
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ message: "Email, OTP and new password are required." });
+    }
+    const normalizedEmail = email.trim().toLowerCase();
     // Check if OTP is valid
-    if (verificationCodes[email] !== otp) {
+    if (verificationCodes[normalizedEmail] !== otp) {
       return res.status(400).json({ message: "Invalid verification code" });
     }
 
     // Check if the user exists in the database
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: normalizedEmail });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -332,8 +346,8 @@ const resetPassword = async (req, res) => {
     user.password = hashedPassword;
     await user.save();
 
-    // Optionally, remove the OTP after it's used
-    delete verificationCodes[email];
+    // Remove the OTP after it's used
+    delete verificationCodes[normalizedEmail];
 
     res.status(200).json({ message: "Password reset successfully" });
   } catch (error) {

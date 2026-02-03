@@ -1,5 +1,7 @@
+// Load .env first, before any other code that reads process.env
+require("dotenv").config({ path: require("path").resolve(__dirname, ".env") });
+
 const express = require("express");
-const dotenv = require("dotenv");
 const connectDB = require("./src/config/db");
 const cors = require("cors");
 const AuthRoutes = require("./src/routes/Auth/auth");
@@ -13,8 +15,6 @@ const PlanPurchaseRoutes = require("./src/routes/Plans/planPurchaseRoutes");
 const NotificationRoutes = require("./src/routes/Notifications/notificationRoutes");
 
 const app = express();
-
-dotenv.config();
 connectDB();
 
 // Import cron jobs
