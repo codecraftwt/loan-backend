@@ -251,6 +251,8 @@ const signInUser = async (req, res) => {
 };
 
 let verificationCodes = {};
+// Rate limit: 1 OTP per minute per email (resend)
+const lastOtpSentAt = {};
 
 const requestPasswordReset = async (req, res) => {
   const { email } = req.body;
@@ -279,12 +281,12 @@ const requestPasswordReset = async (req, res) => {
 
     // Store OTP by normalized email so verify/reset can find it
     verificationCodes[normalizedEmail] = otp;
+    lastOtpSentAt[normalizedEmail] = Date.now();
 
     // Send OTP to the user's stored email address
     try {
       await sendVerificationEmail(user.email, otp);
     } catch (emailError) {
-      console.error("Failed to send email:", emailError);
       return res.status(500).json({
         message: "Failed to send verification email. Please try again later or contact support.",
         error: emailError.message,
@@ -296,6 +298,55 @@ const requestPasswordReset = async (req, res) => {
     });
   } catch (error) {
     console.error("requestPasswordReset error:", error);
+    res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+/** Resend OTP for forgot password. Rate limited to 1 request per 60 seconds per email. */
+const resendPasswordResetOtp = async (req, res) => {
+  const { email } = req.body;
+  const OTP_COOLDOWN_MS = 60 * 1000; // 1 minute
+
+  try {
+    if (!email || typeof email !== "string") {
+      return res.status(400).json({ message: "Email is required." });
+    }
+
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!validateEmail(normalizedEmail)) {
+      return res.status(400).json({ message: "Please provide a valid email address." });
+    }
+
+    const user = await User.findOne({ email: normalizedEmail });
+    if (!user) {
+      return res.status(404).json({ message: "User with this email not found." });
+    }
+
+    const lastSent = lastOtpSentAt[normalizedEmail];
+    if (lastSent && Date.now() - lastSent < OTP_COOLDOWN_MS) {
+      const waitSec = Math.ceil((OTP_COOLDOWN_MS - (Date.now() - lastSent)) / 1000);
+      return res.status(429).json({
+        message: "Please wait before requesting another code.",
+        retryAfterSeconds: waitSec,
+      });
+    }
+
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    verificationCodes[normalizedEmail] = otp;
+    lastOtpSentAt[normalizedEmail] = Date.now();
+
+    try {
+      await sendVerificationEmail(user.email, otp);
+    } catch (emailError) {
+      return res.status(500).json({
+        message: "Failed to send verification email. Please try again later or contact support.",
+        error: emailError.message,
+      });
+    }
+
+    res.status(200).json({ message: "Verification code sent to your email" });
+  } catch (error) {
+    console.error("resendPasswordResetOtp error:", error);
     res.status(500).json({ message: "Server error", error: error.message });
   }
 };
@@ -360,6 +411,7 @@ module.exports = {
   signupUser,
   signInUser,
   requestPasswordReset,
+  resendPasswordResetOtp,
   resetPassword,
   verifyOtp,
 };
