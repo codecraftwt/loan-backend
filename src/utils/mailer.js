@@ -10,13 +10,18 @@ const getGmailConfig = () => {
     process.env.EMAIL ||
     process.env.GMAIL_EMAIL ||
     process.env.GMAIL_USER;
-  const password =
+  let password =
     process.env.EMAIL_PASSWORD ||
     process.env.MAIL_PASSWORD ||
     process.env.GMAIL_APP_PASSWORD ||
     process.env.GMAIL_PASSWORD ||
     process.env.EMAIL_APP_PASSWORD;
-  return { email: (email || "").trim(), password: (password || "").trim() };
+  
+  // Gmail App Passwords work with or without spaces - normalize by removing extra spaces
+  // but keeping the format Gmail expects (16 chars, can have spaces)
+  password = (password || "").trim();
+  
+  return { email: (email || "").trim(), password };
 };
 
 // --- Resend (FREE: 3000 emails/month, no Gmail needed) ---
@@ -36,6 +41,13 @@ const RESEND_FROM = (process.env.RESEND_FROM || "").trim() || `${MAIL_FROM_NAME}
 // Prefer Gmail when both Gmail and Resend are set (Gmail delivers more reliably locally).
 const gmailConfig = getGmailConfig();
 const hasGmail = !!(gmailConfig.email && gmailConfig.password);
+
+// Log email configuration status (without exposing credentials)
+console.log("[Mailer] Gmail configured:", hasGmail);
+console.log("[Mailer] Gmail email:", gmailConfig.email ? gmailConfig.email.substring(0, 5) + "***" : "NOT SET");
+console.log("[Mailer] Gmail password length:", gmailConfig.password ? gmailConfig.password.length : 0);
+console.log("[Mailer] Resend configured:", !!resend);
+
 const transporter = hasGmail
   ? nodemailer.createTransport({
       service: process.env.EMAIL_SERVICE || "gmail",
@@ -44,11 +56,22 @@ const transporter = hasGmail
         pass: gmailConfig.password,
       },
       secure: true,
+      // Add timeout settings for cloud environments
+      connectionTimeout: 10000, // 10 seconds
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     })
   : null;
 
 if (transporter) {
-  transporter.verify(function () {});
+  transporter.verify(function (error, success) {
+    if (error) {
+      console.error("[Mailer] Gmail SMTP verification FAILED:", error.message);
+      console.error("[Mailer] Error code:", error.code);
+    } else {
+      console.log("[Mailer] Gmail SMTP server is ready to send emails");
+    }
+  });
 }
 
 const sendVerificationEmail = async (to, code) => {
@@ -59,20 +82,40 @@ const sendVerificationEmail = async (to, code) => {
     <p>This code is valid for a limited time. Do not share it with anyone.</p>
   `.trim();
 
+  console.log("[Mailer] Attempting to send email to:", to);
+
   // Prefer Gmail when configured — sends from your Gmail (e.g. codecraftwt@gmail.com)
   if (transporter) {
     const fromAddress = gmailConfig.email.includes("@") ? `${MAIL_FROM_NAME} <${gmailConfig.email}>` : gmailConfig.email;
-    const info = await transporter.sendMail({
-      from: fromAddress,
-      to,
-      subject,
-      text,
-      html,
-    });
-    return info;
+    console.log("[Mailer] Using Gmail SMTP, from:", fromAddress);
+    
+    try {
+      const info = await transporter.sendMail({
+        from: fromAddress,
+        to,
+        subject,
+        text,
+        html,
+      });
+      console.log("[Mailer] Gmail email sent successfully. MessageId:", info.messageId);
+      return info;
+    } catch (gmailError) {
+      console.error("[Mailer] Gmail SMTP Error:", gmailError.message);
+      console.error("[Mailer] Gmail Error Code:", gmailError.code);
+      console.error("[Mailer] Gmail Error Response:", gmailError.response);
+      
+      // If Gmail fails and Resend is available, fallback to Resend
+      if (resend) {
+        console.log("[Mailer] Gmail failed, falling back to Resend...");
+      } else {
+        throw gmailError;
+      }
+    }
   }
 
   if (resend) {
+    console.log("[Mailer] Using Resend API, from:", RESEND_FROM);
+    
     const { data, error } = await resend.emails.send({
       from: RESEND_FROM,
       to: [to],
@@ -81,10 +124,11 @@ const sendVerificationEmail = async (to, code) => {
       html,
     });
     if (error) {
+      console.error("[Mailer] Resend Error:", error);
       throw new Error(error.message);
     }
     if (data?.id) {
-      console.log("[Resend] Email sent. Id:", data.id, "To:", to);
+      console.log("[Resend] Email sent successfully. Id:", data.id, "To:", to);
     }
     return data;
   }
