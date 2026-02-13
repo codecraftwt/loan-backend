@@ -18,6 +18,7 @@ const {
   getBorrowerReputationByAadhaar,
   getLenderInstallmentHistory,
   getBorrowerRiskAssessment,
+  getBorrowersList,
 } = require("../../controllers/Lender/lenderLoanController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const checkLender = require("../../middlewares/checkLender");
@@ -37,6 +38,9 @@ router.get('/reputation/:aadhaarNumber', authenticateUser, checkLender, getBorro
 
 // Get borrower risk/fraud assessment by Aadhaar number (lender)
 router.get('/risk-assessment/:aadhaarNumber', authenticateUser, checkLender, getBorrowerRiskAssessment);
+
+// Get all borrowers with name and mobile number (lender only)
+router.get('/borrowers', authenticateUser, checkLender, getBorrowersList);
 
 // Create loan (only lenders can create loans for borrowers) - requires active plan
 // Optional proof file upload using multer

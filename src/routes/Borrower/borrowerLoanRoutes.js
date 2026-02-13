@@ -88,6 +88,4 @@ router.post(
 router.get("/payment-history/:loanId", getPaymentHistory);
 
 // Get installment history for a loan (installment loans only)
-router.get("/installment-history/:loanId", authenticateUser, checkBorrower, getInstallmentHistory);
-
-module.exports = router;
+router.get("/installment-history/:loanId", authenticateUser, checkBorrower, getInstallmentHistory);module.exports = router;

@@ -1777,6 +1777,46 @@ function getRiskBadgeColor(riskLevel) {
   return colors[riskLevel] || "#6b7280";
 }
 
+/**
+ * Get all borrowers with name and mobile number (lender only)
+ * Returns list of borrowers with name and mobile_No fields
+ */
+const getBorrowersList = async (req, res) => {
+  try {
+    // Fetch all borrowers (roleId: 2) with only name and mobile number
+    const borrowers = await User.find({ roleId: 2 })
+      .select("userName mobileNo")
+      .sort({ createdAt: -1 });
+
+    if (!borrowers || borrowers.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: "No borrowers found",
+        data: [],
+      });
+    }
+
+    // Format the response as per requirement
+    const formattedBorrowers = borrowers.map((borrower) => ({
+      name: borrower.userName,
+      mobile_No: borrower.mobileNo,
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: "Borrowers fetched successfully",
+      data: formattedBorrowers,
+    });
+  } catch (error) {
+    console.error("Error fetching borrowers list:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createLoan,
   AddLoan: createLoan,
@@ -1798,5 +1838,6 @@ module.exports = {
   getLenderLoanStatistics,
   getLenderInstallmentHistory,
   getBorrowerRiskAssessment,
+  getBorrowersList,
 };
 
