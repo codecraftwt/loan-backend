@@ -40,7 +40,7 @@ router.get('/reputation/:aadhaarNumber', authenticateUser, checkLender, getBorro
 router.get('/risk-assessment/:aadhaarNumber', authenticateUser, checkLender, getBorrowerRiskAssessment);
 
 // Get all borrowers with name and mobile number (lender only)
-router.get('/borrowers', authenticateUser, checkLender, getBorrowersList);
+router.get('/borrowerscontacts', authenticateUser, checkLender, getBorrowersList);
 
 // Create loan (only lenders can create loans for borrowers) - requires active plan
 // Optional proof file upload using multer
