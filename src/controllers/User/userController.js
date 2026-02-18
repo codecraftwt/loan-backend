@@ -1,5 +1,6 @@
 const User = require("../../models/User");
 const Loan = require("../../models/Loan");
+const bcrypt = require("bcryptjs");
 const cloudinary = require("../../config/cloudinaryConfig");
 const { sendMobileNumberChangeNotification } = require("../../services/notificationService");
 const { normalizeIndianMobile } = require("../../utils/authHelpers");
@@ -272,11 +273,96 @@ const removeDeviceToken = async (req, res) => {
   }
 };
 
+/**
+ * Change password API for all roles (admin, lender, borrower)
+ * Requires: currentPassword, newPassword, confirmNewPassword
+ */
+const changePassword = async (req, res) => {
+  const userId = req.user.id;
+  const { currentPassword, newPassword, confirmNewPassword } = req.body;
+
+  try {
+    // Validate required fields
+    if (!currentPassword || !newPassword || !confirmNewPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password, new password, and confirm password are required",
+      });
+    }
+
+    // Validate that new password and confirm password match
+    if (newPassword !== confirmNewPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password and confirm password do not match",
+      });
+    }
+
+    // Validate password length (minimum 6 characters)
+    if (newPassword.length < 6) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be at least 6 characters long",
+      });
+    }
+
+    // Check if new password is same as current password
+    if (currentPassword === newPassword) {
+      return res.status(400).json({
+        success: false,
+        message: "New password must be different from current password",
+      });
+    }
+
+    // Find the user by ID
+    const user = await User.findById(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: "User not found",
+      });
+    }
+
+    // Verify current password
+    const isCurrentPasswordValid = await bcrypt.compare(
+      currentPassword.trim(),
+      user.password
+    );
+
+    if (!isCurrentPasswordValid) {
+      return res.status(400).json({
+        success: false,
+        message: "Current password is incorrect",
+      });
+    }
+
+    // Hash the new password
+    const hashedNewPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update user's password
+    user.password = hashedNewPassword;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "Password changed successfully",
+    });
+  } catch (error) {
+    console.error("Error changing password:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   updateProfile,
   uploadProfileImage,
   getUserDataById,
   deleteProfileImage,
   registerDeviceToken,
-  removeDeviceToken
+  removeDeviceToken,
+  changePassword,
 };

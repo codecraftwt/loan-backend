@@ -6,6 +6,7 @@ const {
   deleteProfileImage,
   registerDeviceToken,
   removeDeviceToken,
+  changePassword,
 } = require("../controllers/User/userController");
 const authenticateUser = require("../middlewares/authenticateUser");
 const upload = require("../config/multerConfig");
@@ -16,6 +17,10 @@ router.get("/user-data", authenticateUser, getUserDataById);
 
 // Route to update profile (protected route)
 router.patch("/update-profile", authenticateUser, updateProfile);
+
+// Route to change password (protected route - all roles)
+router.patch("/change-password", authenticateUser, changePassword);
+router.post("/change-password", authenticateUser, changePassword);
 
 // Route for uploading profile image
 router.post(
