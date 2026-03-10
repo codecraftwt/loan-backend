@@ -19,7 +19,7 @@ router.get("/user-data", authenticateUser, getUserDataById);
 router.patch("/update-profile", authenticateUser, updateProfile);
 
 // Route to change password (protected route - all roles)
-router.patch("/change-password", authenticateUser, changePassword);
+// router.patch("/change-password", authenticateUser, changePassword);
 router.post("/change-password", authenticateUser, changePassword);
 
 // Route for uploading profile image

@@ -39,7 +39,7 @@ const createPlan = async (req, res) => {
     };
 
     // Check if plan with same name, price, and features already exists
-    const existingPlan = await Plan.findOne({ planName: planName.trim() });
+    const existingPlan = await Plan.findOne({ planName: planName.trim(), isDeleted: false });
     if (existingPlan) {
       const existingPrice = parseFloat(existingPlan.priceMonthly);
       const newPrice = parseFloat(priceMonthly);
@@ -196,6 +196,7 @@ const editPlan = async (req, res) => {
     if (updateData.planName || updateData.priceMonthly !== undefined || updateData.planFeatures) {
       const existingPlan = await Plan.findOne({ 
         planName: finalPlanName,
+        isDeleted: false,
         _id: { $ne: planId } // Exclude current plan
       });
       
@@ -270,13 +271,102 @@ const editPlan = async (req, res) => {
   }
 };
 
-// Get all plans (Admin only - includes inactive plans)
+// Soft delete a plan (Admin only)
+const deletePlan = async (req, res) => {
+  try {
+    const planId = req.params.id;
+
+    // Find the plan
+    const plan = await Plan.findById(planId);
+    if (!plan) {
+      return res.status(404).json({
+        success: false,
+        message: "Plan not found",
+      });
+    }
+
+    // Check if plan is already deleted
+    if (plan.isDeleted) {
+      return res.status(400).json({
+        success: false,
+        message: "Plan is already deleted",
+      });
+    }
+
+    // Check if any active lenders are using this plan
+    const activeLendersWithPlan = await User.findOne({
+      roleId: 1, // Lenders
+      currentPlanId: planId,
+      planExpiryDate: { $gt: new Date() } // Active plans only
+    });
+
+    if (activeLendersWithPlan) {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot delete plan because it is currently being used by active lenders",
+      });
+    }
+
+    // Soft delete the plan
+    plan.isDeleted = true;
+    plan.isActive = false; // Also set isActive to false for consistency
+    plan.deletedAt = new Date();
+    await plan.save();
+
+    // Return success response with the deleted plan info
+    const responseData = {
+      _id: plan._id,
+      planName: plan.planName,
+      description: plan.description,
+      duration: plan.duration,
+      priceMonthly: plan.priceMonthly,
+      planFeatures: {
+        unlimitedLoans: plan.planFeatures?.unlimitedLoans ?? true,
+        advancedAnalytics: plan.planFeatures?.advancedAnalytics ?? false,
+        prioritySupport: plan.planFeatures?.prioritySupport ?? false,
+      },
+      isActive: plan.isActive,
+      isDeleted: plan.isDeleted,
+      deletedAt: plan.deletedAt,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Plan deleted successfully (soft delete)",
+      data: responseData,
+    });
+
+  } catch (error) {
+    console.error("Error deleting plan:", error);
+
+    // Handle invalid ObjectId
+    if (error.name === "CastError") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid plan ID",
+      });
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+// Get all plans (Admin only - includes inactive but excludes soft-deleted)
 const getAllPlans = async (req, res) => {
   try {
-    const { isActive, duration, sortBy = "createdAt", sortOrder = "desc" } = req.query;
+    const { isActive, duration, sortBy = "createdAt", sortOrder = "desc", includeDeleted } = req.query;
 
-    // Build query
-    const query = {};
+    // Build query - exclude soft-deleted by default unless includeDeleted is true
+    const query = { isDeleted: false };
+    
+    if (includeDeleted === "true") {
+      delete query.isDeleted; // Show all including deleted
+    }
+    
     if (isActive !== undefined) {
       query.isActive = isActive === "true";
     }
@@ -303,6 +393,8 @@ const getAllPlans = async (req, res) => {
         prioritySupport: plan.planFeatures?.prioritySupport ?? false,
       },
       isActive: plan.isActive,
+      isDeleted: plan.isDeleted,
+      deletedAt: plan.deletedAt,
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
     }));
@@ -328,8 +420,12 @@ const getActivePlans = async (req, res) => {
   try {
     const { duration, sortBy = "priceMonthly", sortOrder = "asc" } = req.query;
 
-    // Build query - only active plans
-    const query = { isActive: true };
+    // Build query - only active and not deleted plans
+    const query = { 
+      isActive: true,
+      isDeleted: false 
+    };
+    
     if (duration) {
       query.duration = duration;
     }
@@ -377,8 +473,16 @@ const getActivePlans = async (req, res) => {
 const getPlanById = async (req, res) => {
   try {
     const planId = req.params.id;
+    const { includeDeleted } = req.query;
 
-    const plan = await Plan.findById(planId).lean();
+    const query = { _id: planId };
+    
+    // Only filter out deleted plans if includeDeleted is not true
+    if (includeDeleted !== "true") {
+      query.isDeleted = false;
+    }
+
+    const plan = await Plan.findOne(query).lean();
 
     if (!plan) {
       return res.status(404).json({
@@ -400,6 +504,8 @@ const getPlanById = async (req, res) => {
         prioritySupport: plan.planFeatures?.prioritySupport ?? false,
       },
       isActive: plan.isActive,
+      isDeleted: plan.isDeleted,
+      deletedAt: plan.deletedAt,
       createdAt: plan.createdAt,
       updatedAt: plan.updatedAt,
     };
@@ -987,4 +1093,5 @@ module.exports = {
   getLendersWithPlans,
   getAdminRevenue,
   getRecentActivities,
+  deletePlan,
 };

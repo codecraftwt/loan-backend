@@ -5,6 +5,7 @@ const checkAdminOrLender = require("../../middlewares/checkAdminOrLender");
 const { 
   createPlan, 
   editPlan, 
+  deletePlan,
   getAllPlans, 
   getActivePlans, 
   getPlanById,
@@ -19,6 +20,7 @@ const router = express.Router();
 router.post("/plans", authenticateUser, checkAdmin, createPlan);
 router.put("/plans/:id", authenticateUser, checkAdmin, editPlan);
 router.patch("/plans/:id", authenticateUser, checkAdmin, editPlan);
+router.delete("/plans/:id", authenticateUser, checkAdmin, deletePlan);
 
 // Admin and Lender routes - View plans
 router.get("/plans/active", authenticateUser, checkAdminOrLender, getActivePlans); // Get all active plans
