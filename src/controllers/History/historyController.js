@@ -374,7 +374,7 @@ const getBorrowerHistoryByBorrowerAndLenderId = async (req, res) => {
       });
     }
 
-    // Calculate summary statistics
+    // Calculate summary statistics 
     const pendingLoans = loans.filter(loan => loan.paymentStatus === 'pending');
     const paidLoans = loans.filter(loan => loan.paymentStatus === 'paid');
     const totalPendingAmount = pendingLoans.reduce((sum, loan) => sum + loan.amount, 0);
