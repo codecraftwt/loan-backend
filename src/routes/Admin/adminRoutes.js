@@ -11,7 +11,8 @@ const {
   getPlanById,
   getLendersWithPlans,
   getAdminRevenue,
-  getRecentActivities
+  getRecentActivities,
+  getBorrowersByLender
 } = require("../../controllers/Admin/adminController");
 
 const router = express.Router();
@@ -30,10 +31,14 @@ router.get("/plans/:id", authenticateUser, checkAdminOrLender, getPlanById); // 
 // Admin only routes - Lenders with plans
 router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans); // Get all lenders with plan purchase details
 
+
 // Admin only routes - Revenue statistics
 router.get("/revenue", authenticateUser, checkAdmin, getAdminRevenue); // Get admin revenue statistics
 
 // Admin only routes - Recent activities
 router.get("/recent-activities", authenticateUser, checkAdmin, getRecentActivities); // Get admin recent activities
+
+router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans);      // specific first
+router.get("/lenders/:lenderId/borrowers", authenticateUser, checkAdmin, getBorrowersByLender);  // dynamic last
 
 module.exports = router;

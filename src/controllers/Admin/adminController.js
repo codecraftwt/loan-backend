@@ -1,6 +1,160 @@
 const Plan = require("../../models/Plan");
 const User = require("../../models/User");
+const Loan = require("../../models/Loan");
 const paginateQuery = require("../../utils/pagination");
+
+
+// Admin: Get all borrowers who took loan from a specific lender
+
+const getBorrowersByLender = async (req, res) => {
+  try{
+    const {lenderId} = req.params;
+    console.log('=== BORROWERS DEBUG ===');
+    console.log('Request lenderId:', lenderId);
+    console.log('Query params:', req.query);
+    const {page = 1, limit = 10, search, status} = req.query;
+
+    //verify lender exists
+    const lender = await User.findOne({_id: lenderId, roleId: 1})
+    .select("userName email mobileNo profileImage");
+
+    console.log('Lender query result:', !!lender ? 'FOUND' : 'NOT FOUND');
+    if(lender) {
+      console.log('Lender details:', {
+        _id: lender._id,
+        userName: lender.userName,
+        roleId: 1 // confirmed
+      });
+    } else {
+      // Also check if user exists but wrong role
+      const anyUser = await User.findById(lenderId).select('roleId userName');
+      console.log('Any user with ID:', !!anyUser ? 'EXISTS (role:' + anyUser.roleId + ')' : 'DOES NOT EXIST');
+    }
+
+    if(!lender) {
+      return res.status(404).json({
+        success: false,
+        message: "Lender not found",
+      });
+    }
+
+    //build query to find loans by lender
+    const query = {lenderId};
+    if(status) query.paymentStatus = status; // filter by payment status if provided
+
+    if(search){
+      query.$or = [
+        {name : {$regex: search, $options: "i"}},
+        {aadhaarNumber : {$regex: search, $options: "i"}},
+      ];
+    }
+
+    //get all loans by these lender
+    const skip = (page -1) * limit;
+
+    const loans = await Loan.find(query)
+    .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(Number(limit))
+      .populate("borrowerId", "userName email mobileNo profileImage aadharCardNo")
+      .select("name aadhaarNumber amount paymentStatus borrowerAcceptanceStatus loanGivenDate loanEndDate remainingAmount totalPaid borrowerId")
+      .lean();
+
+    const totalLoans = await Loan.countDocuments(query);
+
+    //group by borrower: because one borrowers to has multiple loans
+
+    const borrowerMap = {};
+    loans.forEach((loan) => {
+      const key =  loan.aadhaarNumber;
+       if (!borrowerMap[key]) {
+        borrowerMap[key] ={
+          aadhaarNumber: loan.aadhaarNumber,
+          borrowerName: loan.borrowerId?.userName || loan.name,
+          email: loan.borrowerId?.email || "N/A",
+          mobileNo: loan.borrowerId?.mobileNo || "N/A",
+          profileImage: loan.borrowerId?.profileImage || null,
+          borrowerId: loan.borrowerId?._id || null,
+          loans: [],
+          totalLoansCount: 0,
+          totalLoanAmount: 0,
+          totalPaidAmount: 0,
+          totalRemainingAmount: 0,
+          hasActiveLoan: false,
+          hasOverdueLoan: false,
+        };
+       }
+
+       borrowerMap[key].loans.push({
+        loanId: loan._id,
+        amount: loan.amount,
+        paymentStatus: loan.paymentStatus,
+        borrowerAcceptanceStatus: loan.borrowerAcceptanceStatus,
+        loanGivenDate: loan.loanGivenDate,
+        loanEndDate: loan.loanEndDate,
+        remainigAmount: loan.remainingAmount, 
+        totalPaid: loan.totalPaid,
+       });
+
+        borrowerMap[key].totalLoansCount += 1;
+        borrowerMap[key].totalLoanAmount += loan.amount || 0;
+        borrowerMap[key].totalPaidAmount += loan.totalPaid || 0;
+        borrowerMap[key].totalRemainingAmount += loan.remainingAmount || 0;
+
+      if (loan.paymentStatus === "pending" || loan.paymentStatus === "part paid") {
+        borrowerMap[key].hasActiveLoan = true;
+      }
+      if (loan.paymentStatus === "overdue") {
+        borrowerMap[key].hasOverdueLoan = true;
+      }
+    });
+
+    const borrowers = Object.values(borrowerMap);
+
+     //summary stats
+     const allLoans = await Loan.find({ lenderId }).lean();
+     const summary = {
+     totalUniqueBorrowers: Object.keys(borrowerMap).length,
+      totalLoans: allLoans.length,
+      totalLoanAmount: allLoans.reduce((s, l) => s + (l.amount || 0), 0),
+      totalPaidAmount: allLoans.reduce((s, l) => s + (l.totalPaid || 0), 0),
+      totalRemainingAmount: allLoans.reduce((s, l) => s + (l.remainingAmount || 0), 0),
+      activeLoans: allLoans.filter(l => l.paymentStatus === "pending" || l.paymentStatus === "part paid").length,
+      paidLoans: allLoans.filter(l => l.paymentStatus === "paid").length,
+      overdueLoans: allLoans.filter(l => l.paymentStatus === "overdue").length,
+     };
+
+     return res.status(200).json({
+      success: true,
+      message: "Borrowers fetched successfully",
+      lender: {
+         _id: lender._id,
+        userName: lender.userName,
+        email: lender.email,
+        mobileNo: lender.mobileNo,
+        profileImage: lender.profileImage,
+      },
+       summary,
+      count: borrowers.length,
+      data: borrowers,
+      pagination: {
+        currentPage: Number(page),
+        totalPages: Math.ceil(totalLoans / limit),
+        totalItems: totalLoans,
+        itemsPerPage: Number(limit),
+      },
+     })
+
+  }catch(error){
+    console.error("error fetching borrowers by lender:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+}
+
 
 // Create a new plan (Admin only)
 const createPlan = async (req, res) => {
@@ -1094,4 +1248,5 @@ module.exports = {
   getAdminRevenue,
   getRecentActivities,
   deletePlan,
+  getBorrowersByLender,
 };
