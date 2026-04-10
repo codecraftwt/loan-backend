@@ -56,8 +56,8 @@ const getBorrowersByLender = async (req, res) => {
     .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
-      .populate("borrowerId", "userName email mobileNo profileImage aadharCardNo")
-      .select("name aadhaarNumber amount paymentStatus borrowerAcceptanceStatus loanGivenDate loanEndDate remainingAmount totalPaid borrowerId")
+      .select("name aadhaarNumber mobileNumber amount paymentStatus borrowerAcceptanceStatus loanGivenDate loanEndDate remainingAmount totalPaid")
+
       .lean();
 
     const totalLoans = await Loan.countDocuments(query);
@@ -70,11 +70,11 @@ const getBorrowersByLender = async (req, res) => {
        if (!borrowerMap[key]) {
         borrowerMap[key] ={
           aadhaarNumber: loan.aadhaarNumber,
-          borrowerName: loan.borrowerId?.userName || loan.name,
-          email: loan.borrowerId?.email || "N/A",
-          mobileNo: loan.borrowerId?.mobileNo || "N/A",
-          profileImage: loan.borrowerId?.profileImage || null,
-          borrowerId: loan.borrowerId?._id || null,
+          borrowerName: loan.name,
+          email: "N/A",
+          mobileNo: loan.mobileNumber || "N/A",
+          profileImage: null,
+          borrowerId: null,
           loans: [],
           totalLoansCount: 0,
           totalLoanAmount: 0,
