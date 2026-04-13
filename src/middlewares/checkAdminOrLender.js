@@ -4,6 +4,15 @@ const checkAdminOrLender = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
+    // Impersonation in admin lender  — allow karo
+    if (req.user.isImpersonating && req.user.adminId) {
+      const actualAdmin = await User.findById(req.user.adminId).select("roleId");
+      if (actualAdmin && actualAdmin.roleId === 0) {
+        req.admin = actualAdmin;
+        return next();
+      }
+    }
+
     // Find user and check role
     const user = await User.findById(userId).select("roleId");
 
