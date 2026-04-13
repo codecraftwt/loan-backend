@@ -197,7 +197,7 @@ const adminId = req.user.id;
         adminName: admin.userName,
       },
        process.env.JWT_SECRET || "LoanManagement",
-        { expiresIn: "2h" }
+        { expiresIn: "8h" }
     );
 
     return res.status(200).json({
