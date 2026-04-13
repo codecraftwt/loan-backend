@@ -14,6 +14,8 @@ const checkLender = async (req, res, next) => {
       });
     }
 
+     // ← roleId 1 (lender) allow 
+    // ← isImpersonating flag  allow 
     // Check if user is a lender (roleId: 1)
     if (user.roleId !== 1) {
       return res.status(403).json({
@@ -25,6 +27,10 @@ const checkLender = async (req, res, next) => {
 
     // Attach user info to request for use in controllers
     req.lender = user;
+    // Impersonation info attach to available 
+    //only these two lines add
+     req.isImpersonating = req.user.isImpersonating || false;
+     req.adminId = req.user.adminId || null;
     next();
   } catch (error) {
     console.error("Error in checkLender middleware:", error);

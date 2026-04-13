@@ -1,11 +1,11 @@
 const Plan = require("../../models/Plan");
 const User = require("../../models/User");
 const Loan = require("../../models/Loan");
+const jwt = require("jsonwebtoken");
 const paginateQuery = require("../../utils/pagination");
 
 
 // Admin: Get all borrowers who took loan from a specific lender
-
 const getBorrowersByLender = async (req, res) => {
   try{
     const {lenderId} = req.params;
@@ -63,7 +63,6 @@ const getBorrowersByLender = async (req, res) => {
     const totalLoans = await Loan.countDocuments(query);
 
     //group by borrower: because one borrowers to has multiple loans
-
     const borrowerMap = {};
     loans.forEach((loan) => {
       const key =  loan.aadhaarNumber;
@@ -154,6 +153,80 @@ const getBorrowersByLender = async (req, res) => {
     });
   }
 }
+
+
+//impersonate API
+const impersonateLender = async (req, res) => {
+
+  try{
+const adminId = req.user.id;
+    const {lenderId} = req.params;
+
+    //verify admin exist
+
+    const admin = await User.findById(adminId).select("roleId userName");
+
+    if(!admin || admin.roleId !== 0) {
+      return res.status(403).json({
+        success: false,
+        message: "Only admins can impersonate"
+      });
+    }
+
+    const lender = await User.findOne({ _id: lenderId, roleId: 1 })
+    
+    .select("_id userName email mobileNo roleId profileImage");
+
+    if(!lender) {
+      return res.status(404).json({
+        success: false,
+        message: "Lender not found",
+      });
+    }
+
+
+     // Generate impersonation token
+    // Extra claim: isImpersonating + adminId 
+
+    const impersonateToken = jwt.sign(
+      {
+         id: lender._id,
+        roleId: lender.roleId,
+        isImpersonating: true,
+        adminId: adminId,
+        adminName: admin.userName,
+      },
+       process.env.JWT_SECRET || "LoanManagement",
+        { expiresIn: "2h" }
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `Impersonating ${lender.userName}`,
+      data: {
+        impersonateToken,
+        lender: {
+           _id: lender._id,
+          userName: lender.userName,
+          email: lender.email,
+          mobileNo: lender.mobileNo,
+          roleId: lender.roleId,
+          profileImage: lender.profileImage,
+        },
+         adminId,
+        adminName: admin.userName,
+        expiresIn: "2h",
+      },
+    });
+  }catch(error){
+    console.error("error in impersonateLender:", error);
+    return res.status(500).json({
+      success: false,
+      message: "server error",
+      error: error.message,
+    });
+  }
+};
 
 
 // Create a new plan (Admin only)
@@ -1249,4 +1322,5 @@ module.exports = {
   getRecentActivities,
   deletePlan,
   getBorrowersByLender,
+  impersonateLender,
 };

@@ -12,7 +12,8 @@ const {
   getLendersWithPlans,
   getAdminRevenue,
   getRecentActivities,
-  getBorrowersByLender
+  getBorrowersByLender,
+  impersonateLender
 } = require("../../controllers/Admin/adminController");
 
 const router = express.Router();
@@ -40,5 +41,8 @@ router.get("/recent-activities", authenticateUser, checkAdmin, getRecentActiviti
 
 router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans);      // specific first
 router.get("/lenders/:lenderId/borrowers", authenticateUser, checkAdmin, getBorrowersByLender);  // dynamic last
+
+// Impersonate lender (admin only)
+router.post("/lenders/:lenderId/impersonate", authenticateUser, checkAdmin, impersonateLender);
 
 module.exports = router;
