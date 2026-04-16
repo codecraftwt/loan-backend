@@ -15,6 +15,7 @@ const {
   getBorrowersByLender,
   impersonateLender
 } = require("../../controllers/Admin/adminController");
+const checkLender = require("../../middlewares/checkLender");
 
 const router = express.Router();
 
@@ -23,6 +24,9 @@ router.post("/plans", authenticateUser, checkAdmin, createPlan);
 router.put("/plans/:id", authenticateUser, checkAdmin, editPlan);
 router.patch("/plans/:id", authenticateUser, checkAdmin, editPlan);
 router.delete("/plans/:id", authenticateUser, checkAdmin, deletePlan);
+
+// Impersonate lender (admin only)
+router.post("/lenders/:lenderId/impersonate", authenticateUser, checkAdmin, impersonateLender);
 
 // Admin and Lender routes - View plans
 router.get("/plans/active", authenticateUser, checkAdminOrLender, getActivePlans); // Get all active plans
@@ -40,9 +44,8 @@ router.get("/revenue", authenticateUser, checkAdmin, getAdminRevenue); // Get ad
 router.get("/recent-activities", authenticateUser, checkAdmin, getRecentActivities); // Get admin recent activities
 
 router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans);      // specific first
-router.get("/lenders/:lenderId/borrowers", authenticateUser, checkAdmin, getBorrowersByLender);  // dynamic last
+router.get("/lenders/:lenderId/borrowers", authenticateUser, checkLender, getBorrowersByLender);  // dynamic last
 
-// Impersonate lender (admin only)
-router.post("/lenders/:lenderId/impersonate", authenticateUser, checkAdmin, impersonateLender);
+
 
 module.exports = router;

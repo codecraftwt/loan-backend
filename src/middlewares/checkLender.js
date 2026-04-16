@@ -4,7 +4,17 @@ const checkLender = async (req, res, next) => {
   try {
     const userId = req.user.id;
 
-    // Find user and check role
+    // Impersonation case — allow kar do
+    if (req.user.isImpersonating && req.user.adminId) {
+      const actualAdmin = await User.findById(req.user.adminId).select("roleId");
+      if (actualAdmin && actualAdmin.roleId === 0) {
+        req.isImpersonating = true;
+        req.adminId = req.user.adminId;
+        return next();
+      }
+    }
+
+    // Normal Lender check
     const user = await User.findById(userId).select("roleId");
 
     if (!user) {
@@ -14,9 +24,6 @@ const checkLender = async (req, res, next) => {
       });
     }
 
-     // ← roleId 1 (lender) allow 
-    // ← isImpersonating flag  allow 
-    // Check if user is a lender (roleId: 1)
     if (user.roleId !== 1) {
       return res.status(403).json({
         success: false,
@@ -25,12 +32,8 @@ const checkLender = async (req, res, next) => {
       });
     }
 
-    // Attach user info to request for use in controllers
     req.lender = user;
-    // Impersonation info attach to available 
-    //only these two lines add
-     req.isImpersonating = req.user.isImpersonating || false;
-     req.adminId = req.user.adminId || null;
+    req.isImpersonating = req.user.isImpersonating || false;
     next();
   } catch (error) {
     console.error("Error in checkLender middleware:", error);
@@ -43,4 +46,3 @@ const checkLender = async (req, res, next) => {
 };
 
 module.exports = checkLender;
-
