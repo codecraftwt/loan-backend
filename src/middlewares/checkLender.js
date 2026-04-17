@@ -2,29 +2,42 @@ const User = require("../models/User");
 
 const checkLender = async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    console.log("=== CHECKLENDER DEBUG START ===");
+    console.log("Full req.user:", req.user);
+    console.log("isImpersonating:", req.user?.isImpersonating);
+    console.log("adminId from token:", req.user?.adminId);
+    console.log("Current user ID:", req.user?.id);
 
-    // Impersonation case — allow kar do
-    if (req.user.isImpersonating && req.user.adminId) {
-      const actualAdmin = await User.findById(req.user.adminId).select("roleId");
+    // Impersonation case
+    if (req.user?.isImpersonating === true && req.user?.adminId) {
+      console.log("→ Impersonation detected! Checking actual admin...");
+
+      const actualAdmin = await User.findById(req.user.adminId).select("roleId userName");
+      console.log("Actual Admin found:", actualAdmin);
+
       if (actualAdmin && actualAdmin.roleId === 0) {
+        console.log(" Impersonation verified - Allowing access as Lender");
         req.isImpersonating = true;
         req.adminId = req.user.adminId;
+        console.log("=== CHECKLENDER DEBUG END (Allowed) ===");
         return next();
+      } else {
+        console.log(" Impersonation failed - Admin not valid");
       }
     }
 
-    // Normal Lender check
-    const user = await User.findById(userId).select("roleId");
+    // Normal lender case
+    console.log("→ Checking as normal lender...");
+    const user = await User.findById(req.user.id).select("roleId userName");
+    console.log("Normal user lookup:", user);
 
     if (!user) {
-      return res.status(404).json({
-        success: false,
-        message: "User not found",
-      });
+      console.log(" User not found");
+      return res.status(404).json({ success: false, message: "User not found" });
     }
 
     if (user.roleId !== 1) {
+      console.log(" Not a lender (roleId:", user.roleId, ")");
       return res.status(403).json({
         success: false,
         message: "Access denied. Only lenders can perform this action.",
@@ -32,11 +45,14 @@ const checkLender = async (req, res, next) => {
       });
     }
 
+    console.log(" Normal lender access granted");
+    console.log("=== CHECKLENDER DEBUG END (Allowed) ===");
+
     req.lender = user;
-    req.isImpersonating = req.user.isImpersonating || false;
+    req.isImpersonating = false;
     next();
   } catch (error) {
-    console.error("Error in checkLender middleware:", error);
+    console.error(" Error in checkLender middleware:", error);
     return res.status(500).json({
       success: false,
       message: "Server error while verifying lender access",

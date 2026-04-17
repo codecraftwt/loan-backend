@@ -44,7 +44,7 @@ router.get("/revenue", authenticateUser, checkAdmin, getAdminRevenue); // Get ad
 router.get("/recent-activities", authenticateUser, checkAdmin, getRecentActivities); // Get admin recent activities
 
 router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans);      // specific first
-router.get("/lenders/:lenderId/borrowers", authenticateUser, checkLender, getBorrowersByLender);  // dynamic last
+router.get("/lenders/:lenderId/borrowers", authenticateUser, checkLender, getBorrowersByLender); // dynamic last
 
 
 

@@ -33,6 +33,12 @@ const authenticateUser = (req, res, next) => {
       adminId: decoded.adminId || null,
       adminName: decoded.adminName || null,
     };
+    console.log("Authenticated User:", {
+  id: decoded.id,
+  roleId: decoded.roleId,
+  isImpersonating: decoded.isImpersonating,
+  adminId: decoded.adminId
+});
 
     next();
   } catch (err) {
