@@ -18,7 +18,7 @@ const authenticateUser = (req, res, next) => {
       process.env.JWT_SECRET || "LoanManagement"
     );
 
-    // DEBUG — yeh console mein dekho
+    // DEBUG 
     console.log("=== AUTH DEBUG ===");
     console.log("decoded.id:", decoded.id);
     console.log("decoded.roleId:", decoded.roleId);

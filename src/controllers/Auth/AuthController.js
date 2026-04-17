@@ -153,9 +153,7 @@ const signupUser = async (req, res) => {
     await newUser.save();
 
     // Generate JWT token
-    const token = jwt.sign({ id: newUser._id }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
-    });
+    const token = jwt.sign({ id: newUser._id, roleId: newUser.roleId }, process.env.JWT_SECRET, {      expiresIn: "30d",    });
 
     return res.status(201).json({
       message: "User registered successfully",
@@ -224,9 +222,7 @@ const signInUser = async (req, res) => {
     }
 
     // Generate JWT token
-    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
-      expiresIn: "30d",
-    });
+    const token = jwt.sign({ id: user._id, roleId: user.roleId }, process.env.JWT_SECRET, {      expiresIn: "30d",   });
 
     // Send response with user details and JWT token
     return res.status(200).json({
