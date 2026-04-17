@@ -156,17 +156,15 @@ const getBorrowersByLender = async (req, res) => {
 
 
 //impersonate API
+// impersonate API
 const impersonateLender = async (req, res) => {
+  try {
+    const adminId = req.user.id;
+    const { lenderId } = req.params;
 
-  try{
-const adminId = req.user.id;
-    const {lenderId} = req.params;
-
-    //verify admin exist
-
+    // Verify admin
     const admin = await User.findById(adminId).select("roleId userName");
-
-    if(!admin || admin.roleId !== 0) {
+    if (!admin || admin.roleId !== 0) {
       return res.status(403).json({
         success: false,
         message: "Only admins can impersonate"
@@ -174,30 +172,26 @@ const adminId = req.user.id;
     }
 
     const lender = await User.findOne({ _id: lenderId, roleId: 1 })
-    
-    .select("_id userName email mobileNo roleId profileImage");
+      .select("_id userName email mobileNo roleId profileImage");
 
-    if(!lender) {
+    if (!lender) {
       return res.status(404).json({
         success: false,
         message: "Lender not found",
       });
     }
 
-
-     // Generate impersonation token
-    // Extra claim: isImpersonating + adminId 
-
+    // ✅ IMPORTANT: Token mein saari claims sahi se bhejo
     const impersonateToken = jwt.sign(
       {
-         id: lender._id,
-        roleId: lender.roleId,
-        isImpersonating: true,
-        adminId: adminId,
+        id: lender._id,
+        roleId: lender.roleId,           // ← Lender ka roleId (1)
+        isImpersonating: true,           // ← Yeh zaroori hai
+        adminId: adminId,                // ← Original admin ID
         adminName: admin.userName,
       },
-       process.env.JWT_SECRET || "LoanManagement",
-        { expiresIn: "8h" }
+      process.env.JWT_SECRET || "LoanManagement",
+      { expiresIn: "8h" }
     );
 
     return res.status(200).json({
@@ -206,19 +200,19 @@ const adminId = req.user.id;
       data: {
         impersonateToken,
         lender: {
-           _id: lender._id,
+          _id: lender._id,
           userName: lender.userName,
           email: lender.email,
           mobileNo: lender.mobileNo,
           roleId: lender.roleId,
           profileImage: lender.profileImage,
         },
-         adminId,
+        adminId,
         adminName: admin.userName,
-        expiresIn: "2h",
+        expiresIn: "8h",
       },
     });
-  }catch(error){
+  } catch (error) {
     console.error("error in impersonateLender:", error);
     return res.status(500).json({
       success: false,
