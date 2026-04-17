@@ -24,6 +24,7 @@ const checkLender = async (req, res, next) => {
       } else {
         console.log(" Impersonation failed - Admin not valid");
       }
+      return next();
     }
 
     // Normal lender case

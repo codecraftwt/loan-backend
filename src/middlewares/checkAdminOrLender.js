@@ -2,19 +2,22 @@ const User = require("../models/User");
 
 const checkAdminOrLender = async (req, res, next) => {
   try {
-    const userId = req.user.id;
+    console.log("=== CHECKADMINORLENDER DEBUG ===");
+    console.log("req.user:", req.user);
 
-    // Impersonation in admin lender  — allow karo
-    if (req.user.isImpersonating && req.user.adminId) {
+    // Impersonation case (Admin acting as Lender)
+    if (req.user?.isImpersonating === true && req.user?.adminId) {
       const actualAdmin = await User.findById(req.user.adminId).select("roleId");
       if (actualAdmin && actualAdmin.roleId === 0) {
-        req.admin = actualAdmin;
+        console.log(" Impersonation verified - Allowing access");
+        req.isImpersonating = true;
+        req.adminId = req.user.adminId;
         return next();
       }
     }
 
-    // Find user and check role
-    const user = await User.findById(userId).select("roleId");
+    // Normal case - Admin or Lender
+    const user = await User.findById(req.user?.id).select("roleId userName");
 
     if (!user) {
       return res.status(404).json({
@@ -23,7 +26,6 @@ const checkAdminOrLender = async (req, res, next) => {
       });
     }
 
-    // Check if user is an admin (roleId: 0) or lender (roleId: 1)
     if (user.roleId !== 0 && user.roleId !== 1) {
       return res.status(403).json({
         success: false,
@@ -32,12 +34,11 @@ const checkAdminOrLender = async (req, res, next) => {
       });
     }
 
-    // Attach user info to request for use in controllers
-    if (user.roleId === 0) {
-      req.admin = user;
-    } else if (user.roleId === 1) {
-      req.lender = user;
-    }
+    console.log(` Access granted for roleId: ${user.roleId}`);
+
+    if (user.roleId === 0) req.admin = user;
+    if (user.roleId === 1) req.lender = user;
+
     next();
   } catch (error) {
     console.error("Error in checkAdminOrLender middleware:", error);
@@ -50,4 +51,3 @@ const checkAdminOrLender = async (req, res, next) => {
 };
 
 module.exports = checkAdminOrLender;
-
