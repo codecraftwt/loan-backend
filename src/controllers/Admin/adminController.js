@@ -14,9 +14,40 @@ const getBorrowersByLender = async (req, res) => {
     console.log('Query params:', req.query);
     const {page = 1, limit = 10, search, status} = req.query;
 
-    //verify lender exists
-    const lender = await User.findOne({_id: lenderId, roleId: 1})
-    .select("userName email mobileNo profileImage");
+    console.log('=== BORROWERS DEBUG ===');
+    console.log('Requested lenderId from params:', lenderId);
+    console.log('Current user roleId:', req.user?.roleId);
+    console.log('isImpersonating:', req.user?.isImpersonating);
+
+    // === IMPORTANT LOGIC ===
+    if (req.user.roleId === 1) {
+      // Lender borrowers
+      lenderId = req.user.id;
+      console.log('→ Lender accessing own data. Using lenderId:', lenderId);
+    } 
+    else if (req.user.roleId === 0 || req.isImpersonating === true) {
+      // Admin  impersonating admin - if lenderId params 
+      console.log('→ Admin/Impersonation accessing lender:', lenderId);
+    } 
+    else {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. Only lender or admin can view borrowers.",
+      });
+    }
+
+    //  lender verify 
+    const lender = await User.findOne({ _id: lenderId, roleId: 1 })
+      .select("userName email mobileNo profileImage");
+
+    if (!lender) {
+      return res.status(404).json({
+        success: false,
+        message: "Lender not found",
+      });
+    }
+
+   
 
     console.log('Lender query result:', !!lender ? 'FOUND' : 'NOT FOUND');
     if(lender) {
