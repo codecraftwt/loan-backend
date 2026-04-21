@@ -1,4 +1,13 @@
+
+
+require("dotenv").config();
+const dns = require("dns");
+
+// ✅ Set custom DNS servers (Cloudflare + Google)
+// dns.setServers(["1.1.1.1", "8.8.8.8"]);
 const mongoose = require("mongoose");
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
+
 const connectDB = async () => {
   try {
     await mongoose.connect(process.env.MONGOURL);
