@@ -36,7 +36,7 @@ router.get("/plans/:id", authenticateUser, checkAdminOrLender, getPlanById); // 
 // Admin only routes - Lenders with plans
 router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans); // Get all lenders with plan purchase details
 
-
+  
 // Admin only routes - Revenue statistics
 router.get("/revenue", authenticateUser, checkAdmin, getAdminRevenue); // Get admin revenue statistics
 

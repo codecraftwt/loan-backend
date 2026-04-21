@@ -13,7 +13,7 @@ const getBorrowersByLender = async (req, res) => {
     console.log('Request lenderId:', lenderId);
     console.log('Query params:', req.query);
     const {page = 1, limit = 10, search, status} = req.query;
-
+  
     //verify lender exists
     const lender = await User.findOne({_id: lenderId, roleId: 1})
     .select("userName email mobileNo profileImage");
