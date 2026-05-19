@@ -1104,7 +1104,7 @@ const createRazorpayOrderForPayment = async (req, res) => {
           paymentAmount: paymentAmount,
           paymentType: paymentType,
           remainingAmount: remainingAmount,
-          keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_eXyUgxz2VtmepU',
+          keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_SN1JoYwhNqRjPV',
           loanDetails: {
             totalAmount: loan.amount,
             totalPaid: loan.totalPaid || 0,
@@ -1223,7 +1223,7 @@ const verifyRazorpayPayment = async (req, res) => {
     }
 
     // Verify Razorpay signature
-    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET || 'IOULEZFaWRNrL92MNqF5eDr0';
+    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET || 'tU0NirIbZRB7qDM2r50EgcCG';
     const signatureString = razorpay_order_id + "|" + razorpay_payment_id;
     
     const expectedSignature = crypto
@@ -1237,7 +1237,7 @@ const verifyRazorpayPayment = async (req, res) => {
       console.error("Payment signature verification failed:");
       console.error("Order ID:", razorpay_order_id);
       console.error("Payment ID:", razorpay_payment_id);
-      console.error("Expected Signature:", expectedSignature);
+      console.error("Expected Signature from borrower:", expectedSignature);
       console.error("Received Signature:", razorpay_signature);
 
       return res.status(400).json({

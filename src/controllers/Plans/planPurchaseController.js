@@ -137,7 +137,7 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
     }
 
     // Verify Razorpay signature
-    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET || 'IOULEZFaWRNrL92MNqF5eDr0';
+    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET || 'tU0NirIbZRB7qDM2r50EgcCG';
     const signatureString = razorpay_order_id + "|" + razorpay_payment_id;
     
     const expectedSignature = crypto
@@ -153,7 +153,7 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
       console.error("Order ID:", razorpay_order_id);
       console.error("Payment ID:", razorpay_payment_id);
       console.error("Signature String:", signatureString);
-      console.error("Expected Signature:", expectedSignature);
+      console.error("Expected Signature from plan purchase:", expectedSignature);
       console.error("Received Signature:", razorpay_signature);
       console.error("Secret Key Present:", !!razorpaySecret);
       console.error("Secret Key Length:", razorpaySecret ? razorpaySecret.length : 0);
