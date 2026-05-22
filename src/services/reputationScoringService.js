@@ -55,9 +55,23 @@ async function calculateBorrowerReputation(aadhaarNumber) {
       }
 
       // Check for overdue loans
+      const currentDate = new Date();
+      const loanEndDate = loan.loanEndDate ? new Date(loan.loanEndDate) : null;
+      const remainingAmount = loan.remainingAmount || 0;
+      const isLoanConfirmed = loan.loanConfirmed === true || loan.otpVerified === "verified";
+      const isAccepted = loan.borrowerAcceptanceStatus === "accepted";
+
       const isOverdue =
         loan.paymentStatus === "overdue" ||
-        (loan.overdueDetails && loan.overdueDetails.isOverdue);
+        (loan.overdueDetails && loan.overdueDetails.isOverdue === true) ||
+        (
+          loanEndDate &&
+          loanEndDate < currentDate &&
+          remainingAmount > 0 &&
+          loan.paymentStatus !== "paid" &&
+          isLoanConfirmed &&
+          isAccepted
+        );
 
       if (isOverdue) {
         overdueLoans++;
