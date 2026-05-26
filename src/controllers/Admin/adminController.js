@@ -9,16 +9,12 @@ const paginateQuery = require("../../utils/pagination");
 const getBorrowersByLender = async (req, res) => {
   try{
     const {lenderId} = req.params;
-    console.log('=== BORROWERS DEBUG ===');
-    console.log('Request lenderId:', lenderId);
-    console.log('Query params:', req.query);
     const {page = 1, limit = 10, search, status} = req.query;
   
     //verify lender exists
     const lender = await User.findOne({_id: lenderId, roleId: 1})
     .select("userName email mobileNo profileImage");
 
-    console.log('Lender query result:', !!lender ? 'FOUND' : 'NOT FOUND');
     if(lender) {
       console.log('Lender details:', {
         _id: lender._id,
@@ -28,7 +24,6 @@ const getBorrowersByLender = async (req, res) => {
     } else {
       // Also check if user exists but wrong role
       const anyUser = await User.findById(lenderId).select('roleId userName');
-      console.log('Any user with ID:', !!anyUser ? 'EXISTS (role:' + anyUser.roleId + ')' : 'DOES NOT EXIST');
     }
 
     if(!lender) {

@@ -42,12 +42,6 @@ const RESEND_FROM = (process.env.RESEND_FROM || "").trim() || `${MAIL_FROM_NAME}
 const gmailConfig = getGmailConfig();
 const hasGmail = !!(gmailConfig.email && gmailConfig.password);
 
-// Log email configuration status (without exposing credentials)
-console.log("[Mailer] Gmail configured:", hasGmail);
-console.log("[Mailer] Gmail email:", gmailConfig.email ? gmailConfig.email.substring(0, 5) + "***" : "NOT SET");
-console.log("[Mailer] Gmail password length:", gmailConfig.password ? gmailConfig.password.length : 0);
-console.log("[Mailer] Resend configured:", !!resend);
-
 const transporter = hasGmail
   ? nodemailer.createTransport({
       service: process.env.EMAIL_SERVICE || "gmail",
@@ -82,12 +76,10 @@ const sendVerificationEmail = async (to, code) => {
     <p>This code is valid for a limited time. Do not share it with anyone.</p>
   `.trim();
 
-  console.log("[Mailer] Attempting to send email to:", to);
 
   // Prefer Gmail when configured — sends from your Gmail (e.g. codecraftwt@gmail.com)
   if (transporter) {
     const fromAddress = gmailConfig.email.includes("@") ? `${MAIL_FROM_NAME} <${gmailConfig.email}>` : gmailConfig.email;
-    console.log("[Mailer] Using Gmail SMTP, from:", fromAddress);
     
     try {
       const info = await transporter.sendMail({
@@ -114,7 +106,6 @@ const sendVerificationEmail = async (to, code) => {
   }
 
   if (resend) {
-    console.log("[Mailer] Using Resend API, from:", RESEND_FROM);
     
     const { data, error } = await resend.emails.send({
       from: RESEND_FROM,

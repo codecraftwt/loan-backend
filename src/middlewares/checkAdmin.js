@@ -3,17 +3,8 @@ const User = require("../models/User");
 const checkAdmin = async (req, res, next) => {
   try {
     const userId = req.user.id;
-
-    // DEBUG
-    console.log("=== CHECKADMIN DEBUG ===");
-    console.log("req.user:", req.user);
-    console.log("isImpersonating:", req.user.isImpersonating);
-    console.log("adminId:", req.user.adminId);
-    console.log("=======================");
-
     if (req.user.isImpersonating && req.user.adminId) {
       const actualAdmin = await User.findById(req.user.adminId).select("roleId");
-      console.log("actualAdmin found:", actualAdmin);
 
       if (actualAdmin && actualAdmin.roleId === 0) {
         req.admin = actualAdmin;
@@ -22,8 +13,6 @@ const checkAdmin = async (req, res, next) => {
     }
 
     const user = await User.findById(userId).select("roleId");
-    console.log("Normal user check:", user);
-
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }

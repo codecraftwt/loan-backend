@@ -7,7 +7,9 @@ const paginateQuery = require("../../utils/pagination");
 const { generateLoanAgreement } = require("../../services/agreementService");
 const razorpayInstance = require("../../config/razorpay.config");
 const crypto = require("crypto");
-const { getBorrowerReputation } = require("../../services/reputationScoringService");
+const {
+  getBorrowerReputation,
+} = require("../../services/reputationScoringService");
 const { getFraudDetails } = require("../../services/fraudDetectionService");
 const cloudinary = require("../../config/cloudinaryConfig");
 
@@ -17,8 +19,18 @@ const createLoan = async (req, res) => {
     const LoanData = req.body;
 
     // Validate required fields
-    const requiredFields = ['name', 'aadharCardNo', 'mobileNumber', 'address', 'amount', 'purpose', 'loanGivenDate', 'loanEndDate', 'loanMode'];
-    const missingFields = requiredFields.filter(field => !LoanData[field]);
+    const requiredFields = [
+      "name",
+      "aadharCardNo",
+      "mobileNumber",
+      "address",
+      "amount",
+      "purpose",
+      "loanGivenDate",
+      "loanEndDate",
+      "loanMode",
+    ];
+    const missingFields = requiredFields.filter((field) => !LoanData[field]);
 
     if (missingFields.length > 0) {
       return res.status(400).json({
@@ -29,7 +41,7 @@ const createLoan = async (req, res) => {
     }
 
     // Validate loanMode
-    if (!['cash', 'online'].includes(LoanData.loanMode)) {
+    if (!["cash", "online"].includes(LoanData.loanMode)) {
       return res.status(400).json({
         success: false,
         message: "loanMode must be either 'cash' or 'online'",
@@ -62,7 +74,8 @@ const createLoan = async (req, res) => {
     if (!borrower) {
       return res.status(404).json({
         success: false,
-        message: "Borrower with the provided Aadhar number does not exist or is not a borrower",
+        message:
+          "Borrower with the provided Aadhar number does not exist or is not a borrower",
       });
     }
 
@@ -86,7 +99,7 @@ const createLoan = async (req, res) => {
               } else {
                 resolve(result);
               }
-            }
+            },
           );
           stream.end(req.file.buffer);
         });
@@ -127,7 +140,7 @@ const createLoan = async (req, res) => {
         };
 
         const razorpayOrder = await razorpayInstance.orders.create(options);
-        
+
         razorpayOrderData = {
           razorpayOrderId: razorpayOrder.id,
           razorpayPaymentStatus: "pending",
@@ -170,18 +183,22 @@ const createLoan = async (req, res) => {
     await newLoan.save();
 
     // Send notification (non-blocking - won't throw error if no device tokens)
-    sendLoanUpdateNotification(LoanData.aadharCardNo, LoanData).catch(err => {
-    });
+    sendLoanUpdateNotification(LoanData.aadharCardNo, LoanData).catch(
+      (err) => {},
+    );
 
     // Populate lender details for response
-    const populatedLoan = await Loan.findById(newLoan._id)
-      .populate('lenderId', 'userName email mobileNo profileImage');
+    const populatedLoan = await Loan.findById(newLoan._id).populate(
+      "lenderId",
+      "userName email mobileNo profileImage",
+    );
 
     // Prepare response data
     const responseData = {
       ...populatedLoan.toObject(),
       otp: otp, // Return OTP in response for testing (remove in production)
-      otpMessage: "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
+      otpMessage:
+        "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
     };
 
     // If online payment, include Razorpay order details
@@ -190,22 +207,24 @@ const createLoan = async (req, res) => {
         orderId: razorpayOrderData.razorpayOrderId,
         amount: LoanData.amount * 100, // Amount in paise
         currency: "INR",
-        keyId: process.env.RAZORPAY_KEY_ID || 'rzp_test_SN1JoYwhNqRjPV',
-        message: "Please complete the Razorpay payment to proceed with loan creation. After payment, use the verify-payment endpoint.",
+        keyId: process.env.RAZORPAY_KEY_ID || "rzp_test_SN1JoYwhNqRjPV",
+        message:
+          "Please complete the Razorpay payment to proceed with loan creation. After payment, use the verify-payment endpoint.",
       };
     }
 
     return res.status(201).json({
       success: true,
-      message: LoanData.loanMode === "online" 
-        ? "Loan created successfully. Please complete the Razorpay payment to proceed. OTP will be sent after payment verification."
-        : "Loan created successfully. OTP sent to borrower's mobile number.",
+      message:
+        LoanData.loanMode === "online"
+          ? "Loan created successfully. Please complete the Razorpay payment to proceed. OTP will be sent after payment verification."
+          : "Loan created successfully. OTP sent to borrower's mobile number.",
       data: responseData,
     });
   } catch (error) {
     if (error.name === "ValidationError") {
       const errorMessages = Object.values(error.errors).map(
-        (err) => err.message
+        (err) => err.message,
       );
       return res.status(400).json({
         message: "Validation error",
@@ -224,8 +243,16 @@ const createLoan = async (req, res) => {
 const getLoansByLender = async (req, res) => {
   try {
     const lenderId = req.user.id;
-    let { page, limit, startDate, endDate, status, minAmount, maxAmount, search } =
-      req.query;
+    let {
+      page,
+      limit,
+      startDate,
+      endDate,
+      status,
+      minAmount,
+      maxAmount,
+      search,
+    } = req.query;
 
     minAmount = minAmount ? Number(minAmount) : undefined;
     maxAmount = maxAmount ? Number(maxAmount) : undefined;
@@ -234,7 +261,7 @@ const getLoansByLender = async (req, res) => {
 
     // Add name search if provided
     if (search) {
-      query.name = { $regex: search, $options: 'i' };
+      query.name = { $regex: search, $options: "i" };
     }
 
     if (startDate) query.loanStartDate = { $gte: new Date(startDate) };
@@ -251,7 +278,7 @@ const getLoansByLender = async (req, res) => {
       Loan,
       query,
       page,
-      limit
+      limit,
     );
 
     if (!loans.length) {
@@ -278,7 +305,10 @@ const getLoansByLender = async (req, res) => {
 const GetLoanDetails = async (req, res) => {
   try {
     const loanId = req.params.id;
-    const loan = await Loan.findById(loanId).populate('borrowerId', 'userName mobileNo');
+    const loan = await Loan.findById(loanId).populate(
+      "borrowerId",
+      "userName mobileNo",
+    );
 
     if (!loan) {
       return res.status(404).json({ message: "Loan data not found" });
@@ -286,17 +316,25 @@ const GetLoanDetails = async (req, res) => {
 
     // Check for pending payment confirmations
     const pendingConfirmations = loan.paymentHistory.filter(
-      payment => payment.paymentStatus === 'pending' && loan.paymentConfirmation === 'pending'
+      (payment) =>
+        payment.paymentStatus === "pending" &&
+        loan.paymentConfirmation === "pending",
     );
 
     const responseData = {
       ...loan.toObject(),
-      pendingConfirmations: pendingConfirmations.length > 0 ? {
-        count: pendingConfirmations.length,
-        totalAmount: pendingConfirmations.reduce((sum, payment) => sum + payment.amount, 0),
-        payments: pendingConfirmations,
-        message: `Borrower has submitted ${pendingConfirmations.length} payment(s) totaling ₹${pendingConfirmations.reduce((sum, payment) => sum + payment.amount, 0)} for confirmation.`
-      } : null
+      pendingConfirmations:
+        pendingConfirmations.length > 0
+          ? {
+              count: pendingConfirmations.length,
+              totalAmount: pendingConfirmations.reduce(
+                (sum, payment) => sum + payment.amount,
+                0,
+              ),
+              payments: pendingConfirmations,
+              message: `Borrower has submitted ${pendingConfirmations.length} payment(s) totaling ₹${pendingConfirmations.reduce((sum, payment) => sum + payment.amount, 0)} for confirmation.`,
+            }
+          : null,
     };
 
     return res.status(200).json({
@@ -336,21 +374,31 @@ const editLoan = async (req, res) => {
     }
 
     // Don't allow editing if loan is already confirmed and accepted by borrower
-    if (loan.loanConfirmed && loan.borrowerAcceptanceStatus === 'accepted') {
+    if (loan.loanConfirmed && loan.borrowerAcceptanceStatus === "accepted") {
       return res.status(400).json({
         success: false,
-        message: "Cannot edit loan that has been confirmed and accepted by borrower",
+        message:
+          "Cannot edit loan that has been confirmed and accepted by borrower",
         code: "LOAN_ACCEPTED",
       });
     }
 
     // Prepare update data (exclude fields that shouldn't be changed)
-    const allowedFields = ['name', 'mobileNumber', 'address', 'amount', 'purpose', 'loanGivenDate', 'loanEndDate', 'loanMode'];
+    const allowedFields = [
+      "name",
+      "mobileNumber",
+      "address",
+      "amount",
+      "purpose",
+      "loanGivenDate",
+      "loanEndDate",
+      "loanMode",
+    ];
     const updatedData = {};
-    
-    allowedFields.forEach(field => {
+
+    allowedFields.forEach((field) => {
       if (req.body[field] !== undefined) {
-        if (field === 'loanGivenDate' || field === 'loanEndDate') {
+        if (field === "loanGivenDate" || field === "loanEndDate") {
           updatedData[field] = new Date(req.body[field]);
         } else {
           updatedData[field] = req.body[field];
@@ -359,7 +407,10 @@ const editLoan = async (req, res) => {
     });
 
     // Validate loanMode if provided
-    if (updatedData.loanMode && !['cash', 'online'].includes(updatedData.loanMode)) {
+    if (
+      updatedData.loanMode &&
+      !["cash", "online"].includes(updatedData.loanMode)
+    ) {
       return res.status(400).json({
         success: false,
         message: "loanMode must be either 'cash' or 'online'",
@@ -369,7 +420,7 @@ const editLoan = async (req, res) => {
     // Reset borrower acceptance status and loan confirmation when loan is edited
     updatedData.borrowerAcceptanceStatus = "pending";
     updatedData.loanConfirmed = false;
-    
+
     // Generate new OTP if loan is being edited
     updatedData.otp = "1234";
     updatedData.otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
@@ -377,8 +428,7 @@ const editLoan = async (req, res) => {
     const loanUpdateData = await Loan.findByIdAndUpdate(loanId, updatedData, {
       new: true,
       runValidators: true,
-    })
-      .populate('lenderId', 'userName email mobileNo profileImage');
+    }).populate("lenderId", "userName email mobileNo profileImage");
 
     if (!loanUpdateData) {
       return res.status(404).json({
@@ -396,7 +446,7 @@ const editLoan = async (req, res) => {
 
     await sendLoanUpdateNotification(
       loanUpdateData.aadhaarNumber,
-      loanUpdateData
+      loanUpdateData,
     );
 
     return res.status(200).json({
@@ -407,7 +457,7 @@ const editLoan = async (req, res) => {
   } catch (error) {
     if (error.name === "ValidationError") {
       const errorMessages = Object.values(error.errors).map(
-        (err) => err.message
+        (err) => err.message,
       );
       return res.status(400).json({
         success: false,
@@ -504,10 +554,10 @@ const getLoanStats = async (req, res) => {
     const loansTaken = await Loan.find({ aadhaarNumber });
 
     const loansPending = loansTaken.filter(
-      (loan) => loan.paymentStatus === "pending"
+      (loan) => loan.paymentStatus === "pending",
     ).length;
     const loansPaid = loansTaken.filter(
-      (loan) => loan.paymentStatus === "paid"
+      (loan) => loan.paymentStatus === "paid",
     ).length;
 
     const loansGiven = await Loan.find({ lenderId });
@@ -543,125 +593,140 @@ const getRecentActivities = async (req, res) => {
       const diffInSeconds = Math.floor((now - past) / 1000);
 
       if (diffInSeconds < 60) {
-        return `${diffInSeconds} second${diffInSeconds !== 1 ? 's' : ''} ago`;
+        return `${diffInSeconds} second${diffInSeconds !== 1 ? "s" : ""} ago`;
       }
 
       const diffInMinutes = Math.floor(diffInSeconds / 60);
       if (diffInMinutes < 60) {
-        return `${diffInMinutes} minute${diffInMinutes !== 1 ? 's' : ''} ago`;
+        return `${diffInMinutes} minute${diffInMinutes !== 1 ? "s" : ""} ago`;
       }
 
       const diffInHours = Math.floor(diffInMinutes / 60);
       if (diffInHours < 24) {
-        return `${diffInHours} hour${diffInHours !== 1 ? 's' : ''} ago`;
+        return `${diffInHours} hour${diffInHours !== 1 ? "s" : ""} ago`;
       }
 
       const diffInDays = Math.floor(diffInHours / 24);
       if (diffInDays < 30) {
-        return `${diffInDays} day${diffInDays !== 1 ? 's' : ''} ago`;
+        return `${diffInDays} day${diffInDays !== 1 ? "s" : ""} ago`;
       }
 
       const diffInMonths = Math.floor(diffInDays / 30);
       if (diffInMonths < 12) {
-        return `${diffInMonths} month${diffInMonths !== 1 ? 's' : ''} ago`;
+        return `${diffInMonths} month${diffInMonths !== 1 ? "s" : ""} ago`;
       }
 
       const diffInYears = Math.floor(diffInMonths / 12);
-      return `${diffInYears} year${diffInYears !== 1 ? 's' : ''} ago`;
+      return `${diffInYears} year${diffInYears !== 1 ? "s" : ""} ago`;
     };
 
     // 1. Get user's loans as lender (loans given) - get all and sort by most recent updates
     const loansGiven = await Loan.find({ lenderId: userId })
       .sort({ updatedAt: -1 })
       .limit(limit * 2) // Get more to filter
-      .select('name amount paymentStatus borrowerAcceptanceStatus updatedAt')
+      .select("name amount paymentStatus borrowerAcceptanceStatus updatedAt")
       .lean();
 
     // 2. Get user's loans as borrower (loans taken) using aadhaarNumber
-    const user = await User.findById(userId).select('aadharCardNo');
-    const loansTaken = user?.aadharCardNo ?
-      await Loan.find({ aadhaarNumber: user.aadharCardNo })
-        .sort({ updatedAt: -1 })
-        .limit(limit * 2) // Get more to filter
-        .select('name amount status borrowerAcceptanceStatus updatedAt lenderId')
-        .populate('lenderId', 'userName')
-        .lean() : [];
+    const user = await User.findById(userId).select("aadharCardNo");
+    const loansTaken = user?.aadharCardNo
+      ? await Loan.find({ aadhaarNumber: user.aadharCardNo })
+          .sort({ updatedAt: -1 })
+          .limit(limit * 2) // Get more to filter
+          .select(
+            "name amount status borrowerAcceptanceStatus updatedAt lenderId",
+          )
+          .populate("lenderId", "userName")
+          .lean()
+      : [];
 
     // Format activities
     const activities = [];
 
     // Format loans given activities
-    loansGiven.forEach(loan => {
-      let shortMessage = '';
-      let message = '';
+    loansGiven.forEach((loan) => {
+      let shortMessage = "";
+      let message = "";
 
-      if (loan.paymentStatus === 'paid') {
-        shortMessage = 'Loan Repaid';
+      if (loan.paymentStatus === "paid") {
+        shortMessage = "Loan Repaid";
         message = `Loan of ₹${loan.amount} given to ${loan.name} has been marked as paid`;
-      } else if (loan.borrowerAcceptanceStatus === 'accepted') {
-        shortMessage = 'Loan Accepted';
+      } else if (loan.borrowerAcceptanceStatus === "accepted") {
+        shortMessage = "Loan Accepted";
         message = `${loan.name} accepted your loan of ₹${loan.amount}`;
-      } else if (loan.borrowerAcceptanceStatus === 'rejected') {
-        shortMessage = 'Loan Rejected';
+      } else if (loan.borrowerAcceptanceStatus === "rejected") {
+        shortMessage = "Loan Rejected";
         message = `${loan.name} rejected your loan of ₹${loan.amount}`;
-      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
-        shortMessage = 'Loan Given';
+      } else if (
+        loan.paymentStatus === "pending" &&
+        loan.borrowerAcceptanceStatus === "pending"
+      ) {
+        shortMessage = "Loan Given";
         message = `You gave a loan of ₹${loan.amount} to ${loan.name}`;
-      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
-        shortMessage = 'Loan Active';
+      } else if (
+        loan.paymentStatus === "pending" &&
+        loan.borrowerAcceptanceStatus === "accepted"
+      ) {
+        shortMessage = "Loan Active";
         message = `Loan of ₹${loan.amount} to ${loan.name} is active`;
       }
 
       // Only add if we have a message
       if (shortMessage && message) {
         activities.push({
-          type: 'loan_given',
+          type: "loan_given",
           shortMessage,
           message,
           loanId: loan._id,
           loanName: loan.name,
           amount: loan.amount,
           timestamp: loan.updatedAt,
-          relativeTime: getRelativeTime(loan.updatedAt)
+          relativeTime: getRelativeTime(loan.updatedAt),
         });
       }
     });
 
     // Format loans taken activities
-    loansTaken.forEach(loan => {
-      let shortMessage = '';
-      let message = '';
+    loansTaken.forEach((loan) => {
+      let shortMessage = "";
+      let message = "";
 
-      const lenderName = loan.lenderId?.userName || 'Lender';
+      const lenderName = loan.lenderId?.userName || "Lender";
 
-      if (loan.paymentStatus === 'paid') {
-        shortMessage = 'Loan Paid';
+      if (loan.paymentStatus === "paid") {
+        shortMessage = "Loan Paid";
         message = `You paid ₹${loan.amount} to ${lenderName}`;
-      } else if (loan.borrowerAcceptanceStatus === 'accepted') {
-        shortMessage = 'Loan Accepted';
+      } else if (loan.borrowerAcceptanceStatus === "accepted") {
+        shortMessage = "Loan Accepted";
         message = `You accepted loan of ₹${loan.amount} from ${lenderName}`;
-      } else if (loan.borrowerAcceptanceStatus === 'rejected') {
-        shortMessage = 'Loan Rejected';
+      } else if (loan.borrowerAcceptanceStatus === "rejected") {
+        shortMessage = "Loan Rejected";
         message = `You rejected loan of ₹${loan.amount} from ${lenderName}`;
-      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'pending') {
-        shortMessage = 'Loan Requested';
+      } else if (
+        loan.paymentStatus === "pending" &&
+        loan.borrowerAcceptanceStatus === "pending"
+      ) {
+        shortMessage = "Loan Requested";
         message = `You requested a loan of ₹${loan.amount} from ${lenderName}`;
-      } else if (loan.paymentStatus === 'pending' && loan.borrowerAcceptanceStatus === 'accepted') {
-        shortMessage = 'Loan Active';
+      } else if (
+        loan.paymentStatus === "pending" &&
+        loan.borrowerAcceptanceStatus === "accepted"
+      ) {
+        shortMessage = "Loan Active";
         message = `Your loan of ₹${loan.amount} from ${lenderName} is active`;
       }
 
       // Only add if we have a message
       if (shortMessage && message) {
         activities.push({
-          type: 'loan_taken',
+          type: "loan_taken",
           shortMessage,
           message,
           loanId: loan._id,
           loanName: loan.name,
           amount: loan.amount,
           timestamp: loan.updatedAt,
-          relativeTime: getRelativeTime(loan.updatedAt)
+          relativeTime: getRelativeTime(loan.updatedAt),
         });
       }
     });
@@ -751,17 +816,17 @@ const verifyOTPAndConfirmLoan = async (req, res) => {
     await loan.save();
 
     // Send notification to borrower (non-blocking - won't throw error if no device tokens)
-    sendLoanUpdateNotification(loan.aadhaarNumber, loan).catch(err => {
+    sendLoanUpdateNotification(loan.aadhaarNumber, loan).catch((err) => {
       console.log("Notification skipped:", err.message);
     });
 
     // Populate loan details for response
     const confirmedLoan = await Loan.findById(loan._id)
-      .populate('lenderId', 'userName email mobileNo profileImage')
+      .populate("lenderId", "userName email mobileNo profileImage")
       .populate({
-        path: 'borrowerId',
-        select: 'userName email mobileNo aadharCardNo',
-        strictPopulate: false // Allow populate even if borrowerId is null
+        path: "borrowerId",
+        select: "userName email mobileNo aadharCardNo",
+        strictPopulate: false, // Allow populate even if borrowerId is null
       });
 
     return res.status(200).json({
@@ -836,7 +901,8 @@ const resendOTP = async (req, res) => {
         loanId: loan._id,
         otp: otp, // Return OTP in response for testing (remove in production)
         otpExpiry: otpExpiry,
-        otpMessage: "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
+        otpMessage:
+          "Use this OTP to confirm the loan. OTP is valid for 10 minutes.",
       },
     });
   } catch (error) {
@@ -858,6 +924,7 @@ const confirmPayment = async (req, res) => {
 
     // Find the loan
     const loan = await Loan.findById(loanId);
+
     if (!loan) {
       return res.status(404).json({ message: "Loan not found" });
     }
@@ -871,7 +938,7 @@ const confirmPayment = async (req, res) => {
 
     // Find the payment in history
     const paymentIndex = loan.paymentHistory.findIndex(
-      (payment) => payment._id.toString() === paymentId
+      (payment) => payment._id.toString() === paymentId,
     );
 
     if (paymentIndex === -1) {
@@ -891,50 +958,54 @@ const confirmPayment = async (req, res) => {
     payment.paymentStatus = "confirmed";
     payment.confirmedBy = lenderId;
     payment.confirmedAt = new Date();
+
     if (notes) {
       payment.notes = notes;
     }
 
     // Update loan payment confirmation status
     loan.paymentConfirmation = "confirmed";
-
-    // Update loan totals only if payment was previously pending
+    // Update loan totals
     loan.totalPaid += payment.amount;
     loan.remainingAmount = loan.amount - loan.totalPaid;
 
-    // Update installment tracking if this is an installment payment
+    // Update installment tracking
     if (payment.paymentType === "installment") {
-      // The installmentNumber is already set when borrower submits payment
-      // We don't need to increment paidInstallments here - we count confirmed installments
-      
-      // Calculate next due date based on frequency
       if (loan.installmentPlan.installmentFrequency === "monthly") {
-        loan.installmentPlan.nextDueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+        loan.installmentPlan.nextDueDate = new Date(
+          Date.now() + 30 * 24 * 60 * 60 * 1000,
+        );
       } else if (loan.installmentPlan.installmentFrequency === "weekly") {
-        loan.installmentPlan.nextDueDate = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        loan.installmentPlan.nextDueDate = new Date(
+          Date.now() + 7 * 24 * 60 * 60 * 1000,
+        );
       } else if (loan.installmentPlan.installmentFrequency === "quarterly") {
-        loan.installmentPlan.nextDueDate = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000);
+        loan.installmentPlan.nextDueDate = new Date(
+          Date.now() + 90 * 24 * 60 * 60 * 1000,
+        );
       }
     }
 
-    // Update payment status based on remaining amount
+    // Update payment status
     if (loan.remainingAmount <= 0) {
       loan.paymentStatus = "paid";
       loan.remainingAmount = 0;
     } else {
-      loan.paymentStatus = loan.paymentType === "installment" ? "part paid" : "part paid";
+      loan.paymentStatus = "part paid";
     }
 
-    // Reset overdue status if payment brings loan current
+    // Reset overdue status if fully paid
     if (loan.remainingAmount <= 0) {
       loan.overdueDetails.isOverdue = false;
       loan.overdueDetails.overdueAmount = 0;
       loan.overdueDetails.overdueDays = 0;
     }
 
-    await loan.save();
+    // await loan.save();
+    // confirm payment
+    await loan.save({ validateBeforeSave: false });
 
-    // Send notification to borrower
+    // Send notification
     await sendLoanUpdateNotification(loan.aadhaarNumber, loan);
 
     return res.status(200).json({
@@ -948,9 +1019,9 @@ const confirmPayment = async (req, res) => {
         paymentStatus: loan.paymentStatus,
       },
     });
-
   } catch (error) {
-    console.error("Error confirming payment:", error);
+    console.error("Full Error:", error);
+
     return res.status(500).json({
       message: "Server error. Please try again later.",
       error: error.message,
@@ -973,8 +1044,11 @@ const rejectPayment = async (req, res) => {
 
     // Find the loan
     const loan = await Loan.findById(loanId);
+
     if (!loan) {
-      return res.status(404).json({ message: "Loan not found" });
+      return res.status(404).json({
+        message: "Loan not found",
+      });
     }
 
     // Verify lender owns this loan
@@ -984,36 +1058,39 @@ const rejectPayment = async (req, res) => {
       });
     }
 
-    // Find the payment in history
+    // Find payment
     const paymentIndex = loan.paymentHistory.findIndex(
-      (payment) => payment._id.toString() === paymentId
+      (payment) => payment._id.toString() === paymentId,
     );
 
     if (paymentIndex === -1) {
-      return res.status(404).json({ message: "Payment not found" });
+      return res.status(404).json({
+        message: "Payment not found",
+      });
     }
 
     const payment = loan.paymentHistory[paymentIndex];
 
-    // Check if payment is already confirmed or rejected
+    // Check status
     if (payment.paymentStatus !== "pending") {
       return res.status(400).json({
         message: `Payment is already ${payment.paymentStatus}`,
       });
     }
 
-    // Update payment status
+    // Reject payment
     payment.paymentStatus = "rejected";
     payment.confirmedBy = lenderId;
     payment.confirmedAt = new Date();
     payment.notes = `Rejected: ${reason}`;
 
-    // Update loan payment confirmation status
+    // Update loan status
     loan.paymentConfirmation = "rejected";
 
-    await loan.save();
+    // await loan.save();
+    await loan.save({ validateBeforeSave: false });
 
-    // Send notification to borrower
+    // Send notification
     await sendLoanUpdateNotification(loan.aadhaarNumber, loan);
 
     return res.status(200).json({
@@ -1025,9 +1102,9 @@ const rejectPayment = async (req, res) => {
         reason: reason,
       },
     });
-
   } catch (error) {
-    console.error("Error rejecting payment:", error);
+    console.error("Full Error:", error);
+
     return res.status(500).json({
       message: "Server error. Please try again later.",
       error: error.message,
@@ -1043,15 +1120,19 @@ const getPendingPayments = async (req, res) => {
 
     // Find loans by lender with pending payments
     const loans = await Loan.find({ lenderId })
-      .select('name amount totalPaid remainingAmount paymentStatus paymentHistory aadhaarNumber')
+      .select(
+        "name amount totalPaid remainingAmount paymentStatus paymentHistory aadhaarNumber",
+      )
       .lean();
 
     // Filter loans that have pending payments
     const pendingPayments = [];
-    loans.forEach(loan => {
+    loans.forEach((loan) => {
       // Check if paymentHistory exists and is an array
       if (loan.paymentHistory && Array.isArray(loan.paymentHistory)) {
-        const pending = loan.paymentHistory.filter(payment => payment.paymentStatus === 'pending');
+        const pending = loan.paymentHistory.filter(
+          (payment) => payment.paymentStatus === "pending",
+        );
         if (pending.length > 0) {
           pendingPayments.push({
             loanId: loan._id,
@@ -1081,7 +1162,6 @@ const getPendingPayments = async (req, res) => {
         itemsPerPage: parseInt(limit),
       },
     });
-
   } catch (error) {
     console.error("Error retrieving pending payments:", error);
     return res.status(500).json({
@@ -1150,59 +1230,69 @@ const getLenderLoanStatistics = async (req, res) => {
       const currentDate = new Date();
       const loanEndDate = loan.loanEndDate ? new Date(loan.loanEndDate) : null;
       const remainingAmount = loan.remainingAmount || 0;
-      const isLoanConfirmed = loan.loanConfirmed === true || loan.otpVerified === "verified";
+      const isLoanConfirmed =
+        loan.loanConfirmed === true || loan.otpVerified === "verified";
       const isAccepted = loan.borrowerAcceptanceStatus === "accepted";
-      
-      const isOverdue = 
-        loan.paymentStatus === "overdue" || 
+
+      const isOverdue =
+        loan.paymentStatus === "overdue" ||
         (loan.overdueDetails && loan.overdueDetails.isOverdue === true) ||
-        (
-          loanEndDate && 
-          loanEndDate < currentDate && 
-          remainingAmount > 0 && 
+        (loanEndDate &&
+          loanEndDate < currentDate &&
+          remainingAmount > 0 &&
           loan.paymentStatus !== "paid" &&
           isLoanConfirmed &&
-          isAccepted
-        );
+          isAccepted);
 
       if (isOverdue) {
         // Use overdueAmount if available, otherwise use remainingAmount
-        const overdueAmount = loan.overdueDetails?.overdueAmount || remainingAmount || 0;
+        const overdueAmount =
+          loan.overdueDetails?.overdueAmount || remainingAmount || 0;
         totalOverdueAmount += overdueAmount > 0 ? overdueAmount : 0;
         overdueLoansCount++;
       }
 
       // Check if loan is pending (not paid and not overdue)
-      const isPending = 
-        (loan.paymentStatus === "pending" || loan.paymentStatus === "part paid") &&
+      const isPending =
+        (loan.paymentStatus === "pending" ||
+          loan.paymentStatus === "part paid") &&
         !isOverdue &&
-        (loan.remainingAmount > 0 || (loan.totalPaid || 0) < (loan.amount || 0));
+        (loan.remainingAmount > 0 ||
+          (loan.totalPaid || 0) < (loan.amount || 0));
 
       if (isPending) {
-        const pendingAmount = loan.remainingAmount || ((loan.amount || 0) - (loan.totalPaid || 0));
+        const pendingAmount =
+          loan.remainingAmount || (loan.amount || 0) - (loan.totalPaid || 0);
         totalPendingAmount += pendingAmount > 0 ? pendingAmount : 0;
         pendingLoansCount++;
       }
 
       // Count paid loans (fully paid)
-      if (loan.paymentStatus === "paid" || (loan.remainingAmount === 0 && (loan.totalPaid || 0) >= (loan.amount || 0))) {
+      if (
+        loan.paymentStatus === "paid" ||
+        (loan.remainingAmount === 0 &&
+          (loan.totalPaid || 0) >= (loan.amount || 0))
+      ) {
         paidLoansCount++;
       }
     });
 
     // Calculate percentages (based on total loan amount)
-    const totalLoanAmountPercentage = 100.00; // Total loan amount is always 100% (base reference)
-    const paidPercentage = totalLoanAmount > 0 
-      ? parseFloat(((totalPaidAmount / totalLoanAmount) * 100).toFixed(2))
-      : 0;
-    
-    const overduePercentage = totalLoanAmount > 0
-      ? parseFloat(((totalOverdueAmount / totalLoanAmount) * 100).toFixed(2))
-      : 0;
-    
-    const pendingPercentage = totalLoanAmount > 0
-      ? parseFloat(((totalPendingAmount / totalLoanAmount) * 100).toFixed(2))
-      : 0;
+    const totalLoanAmountPercentage = 100.0; // Total loan amount is always 100% (base reference)
+    const paidPercentage =
+      totalLoanAmount > 0
+        ? parseFloat(((totalPaidAmount / totalLoanAmount) * 100).toFixed(2))
+        : 0;
+
+    const overduePercentage =
+      totalLoanAmount > 0
+        ? parseFloat(((totalOverdueAmount / totalLoanAmount) * 100).toFixed(2))
+        : 0;
+
+    const pendingPercentage =
+      totalLoanAmount > 0
+        ? parseFloat(((totalPendingAmount / totalLoanAmount) * 100).toFixed(2))
+        : 0;
 
     // Prepare response data
     const responseData = {
@@ -1255,10 +1345,16 @@ const verifyLoanPayment = async (req, res) => {
     const lenderId = req.user.id;
 
     // Validate required fields
-    if (!loanId || !razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+    if (
+      !loanId ||
+      !razorpay_payment_id ||
+      !razorpay_order_id ||
+      !razorpay_signature
+    ) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields: loanId, razorpay_payment_id, razorpay_order_id, razorpay_signature",
+        message:
+          "Missing required fields: loanId, razorpay_payment_id, razorpay_order_id, razorpay_signature",
       });
     }
 
@@ -1306,9 +1402,10 @@ const verifyLoanPayment = async (req, res) => {
     }
 
     // Verify Razorpay signature
-    const razorpaySecret = process.env.RAZORPAY_KEY_SECRET || 'tU0NirIbZRB7qDM2r50EgcCG';
+    const razorpaySecret =
+      process.env.RAZORPAY_KEY_SECRET || "tU0NirIbZRB7qDM2r50EgcCG";
     const signatureString = razorpay_order_id + "|" + razorpay_payment_id;
-    
+
     const expectedSignature = crypto
       .createHmac("sha256", razorpaySecret)
       .update(signatureString)
@@ -1322,7 +1419,7 @@ const verifyLoanPayment = async (req, res) => {
       console.error("Payment ID:", razorpay_payment_id);
       console.error("Expected Signature from lender:", expectedSignature);
       console.error("Received Signature:", razorpay_signature);
-      
+
       // Update loan with failed payment status
       loan.razorpayPaymentStatus = "failed";
       await loan.save();
@@ -1338,7 +1435,7 @@ const verifyLoanPayment = async (req, res) => {
     loan.razorpayPaymentId = razorpay_payment_id;
     loan.razorpaySignature = razorpay_signature;
     loan.razorpayPaymentStatus = "completed";
-    
+
     // Update payment mode
     loan.paymentMode = "online";
 
@@ -1348,22 +1445,23 @@ const verifyLoanPayment = async (req, res) => {
     await loan.save();
 
     // Send notification to borrower (non-blocking)
-    sendLoanUpdateNotification(loan.aadhaarNumber, loan).catch(err => {
+    sendLoanUpdateNotification(loan.aadhaarNumber, loan).catch((err) => {
       console.log("Notification skipped:", err.message);
     });
 
     // Populate loan details for response
     const verifiedLoan = await Loan.findById(loan._id)
-      .populate('lenderId', 'userName email mobileNo profileImage')
+      .populate("lenderId", "userName email mobileNo profileImage")
       .populate({
-        path: 'borrowerId',
-        select: 'userName email mobileNo aadharCardNo',
-        strictPopulate: false
+        path: "borrowerId",
+        select: "userName email mobileNo aadharCardNo",
+        strictPopulate: false,
       });
 
     return res.status(200).json({
       success: true,
-      message: "Payment verified successfully. Please verify OTP to confirm the loan.",
+      message:
+        "Payment verified successfully. Please verify OTP to confirm the loan.",
       data: {
         loan: verifiedLoan,
         paymentDetails: {
@@ -1373,7 +1471,8 @@ const verifyLoanPayment = async (req, res) => {
           currency: "INR",
           paymentStatus: "completed",
         },
-        nextStep: "Verify OTP using the verify-otp endpoint to complete loan confirmation",
+        nextStep:
+          "Verify OTP using the verify-otp endpoint to complete loan confirmation",
       },
     });
   } catch (error) {
@@ -1436,11 +1535,11 @@ const getLenderInstallmentHistory = async (req, res) => {
 
     // Find the loan
     const loan = await Loan.findById(loanId)
-      .populate('lenderId', 'userName email mobileNo profileImage')
+      .populate("lenderId", "userName email mobileNo profileImage")
       .populate({
-        path: 'borrowerId',
-        select: 'userName email mobileNo aadharCardNo',
-        strictPopulate: false
+        path: "borrowerId",
+        select: "userName email mobileNo aadharCardNo",
+        strictPopulate: false,
       });
 
     if (!loan) {
@@ -1462,8 +1561,10 @@ const getLenderInstallmentHistory = async (req, res) => {
     }
 
     // Check if loan has installment plan
-    const isInstallmentLoan = loan.paymentType === "installment" || loan.installmentPlan?.totalInstallments > 1;
-    
+    const isInstallmentLoan =
+      loan.paymentType === "installment" ||
+      loan.installmentPlan?.totalInstallments > 1;
+
     if (!isInstallmentLoan) {
       return res.status(400).json({
         success: false,
@@ -1475,23 +1576,36 @@ const getLenderInstallmentHistory = async (req, res) => {
     const totalInstallments = installmentPlan.totalInstallments || 1;
     const installmentAmount = installmentPlan.installmentAmount || loan.amount;
     const frequency = installmentPlan.installmentFrequency || "monthly";
-    const loanStartDate = loan.loanStartDate || loan.loanGivenDate || loan.createdAt;
+    const loanStartDate =
+      loan.loanStartDate || loan.loanGivenDate || loan.createdAt;
 
     // Get all confirmed payments (these are the paid installments)
-    const confirmedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'confirmed');
-    const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
-    const rejectedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'rejected');
+    const confirmedPayments = loan.paymentHistory.filter(
+      (p) => p.paymentStatus === "confirmed",
+    );
+    const pendingPayments = loan.paymentHistory.filter(
+      (p) => p.paymentStatus === "pending",
+    );
+    const rejectedPayments = loan.paymentHistory.filter(
+      (p) => p.paymentStatus === "rejected",
+    );
 
     // Filter installment payments
-    const confirmedInstallments = confirmedPayments.filter(p => p.paymentType === 'installment');
-    const pendingInstallments = pendingPayments.filter(p => p.paymentType === 'installment');
-    const rejectedInstallments = rejectedPayments.filter(p => p.paymentType === 'installment');
+    const confirmedInstallments = confirmedPayments.filter(
+      (p) => p.paymentType === "installment",
+    );
+    const pendingInstallments = pendingPayments.filter(
+      (p) => p.paymentType === "installment",
+    );
+    const rejectedInstallments = rejectedPayments.filter(
+      (p) => p.paymentType === "installment",
+    );
 
     // Calculate frequency in days
     const frequencyDays = {
       weekly: 7,
       monthly: 30,
-      quarterly: 90
+      quarterly: 90,
     };
     const daysToAdd = frequencyDays[frequency] || 30;
 
@@ -1499,7 +1613,7 @@ const getLenderInstallmentHistory = async (req, res) => {
     const calculateDueDate = (startDate, installmentIndex, daysToAdd) => {
       const start = new Date(startDate);
       const dueDate = new Date(start);
-      dueDate.setDate(dueDate.getDate() + (installmentIndex * daysToAdd));
+      dueDate.setDate(dueDate.getDate() + installmentIndex * daysToAdd);
       return dueDate;
     };
 
@@ -1509,11 +1623,19 @@ const getLenderInstallmentHistory = async (req, res) => {
     let paidInstallmentsCount = 0;
 
     // Sort confirmed installments by payment date
-    confirmedInstallments.sort((a, b) => new Date(a.confirmedAt || a.paymentDate) - new Date(b.confirmedAt || b.paymentDate));
+    confirmedInstallments.sort(
+      (a, b) =>
+        new Date(a.confirmedAt || a.paymentDate) -
+        new Date(b.confirmedAt || b.paymentDate),
+    );
 
     // Add paid installments
     confirmedInstallments.forEach((payment, index) => {
-      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      const dueDate = calculateDueDate(
+        loanStartDate,
+        paidInstallmentsCount,
+        daysToAdd,
+      );
       installmentSchedule.push({
         installmentNumber: paidInstallmentsCount + 1,
         amount: payment.amount,
@@ -1523,7 +1645,8 @@ const getLenderInstallmentHistory = async (req, res) => {
         paymentMode: payment.paymentMode,
         transactionId: payment.transactionId,
         notes: payment.notes,
-        isOnTime: new Date(payment.confirmedAt || payment.paymentDate) <= dueDate,
+        isOnTime:
+          new Date(payment.confirmedAt || payment.paymentDate) <= dueDate,
         paymentId: payment._id,
         confirmedBy: payment.confirmedBy,
         confirmedAt: payment.confirmedAt,
@@ -1533,7 +1656,11 @@ const getLenderInstallmentHistory = async (req, res) => {
 
     // Add pending installments
     pendingInstallments.forEach((payment, index) => {
-      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      const dueDate = calculateDueDate(
+        loanStartDate,
+        paidInstallmentsCount,
+        daysToAdd,
+      );
       installmentSchedule.push({
         installmentNumber: paidInstallmentsCount + 1,
         amount: payment.amount,
@@ -1551,7 +1678,11 @@ const getLenderInstallmentHistory = async (req, res) => {
 
     // Add rejected installments
     rejectedInstallments.forEach((payment, index) => {
-      const dueDate = calculateDueDate(loanStartDate, paidInstallmentsCount, daysToAdd);
+      const dueDate = calculateDueDate(
+        loanStartDate,
+        paidInstallmentsCount,
+        daysToAdd,
+      );
       installmentSchedule.push({
         installmentNumber: paidInstallmentsCount + 1,
         amount: payment.amount,
@@ -1571,34 +1702,61 @@ const getLenderInstallmentHistory = async (req, res) => {
     // Add upcoming installments (not yet paid or submitted)
     while (installmentSchedule.length < totalInstallments) {
       const installmentNumber = installmentSchedule.length + 1;
-      const dueDate = calculateDueDate(loanStartDate, installmentSchedule.length, daysToAdd);
-      const isOverdue = new Date(dueDate) < currentDate && installmentSchedule.length > 0;
-      
+      const dueDate = calculateDueDate(
+        loanStartDate,
+        installmentSchedule.length,
+        daysToAdd,
+      );
+      const isOverdue =
+        new Date(dueDate) < currentDate && installmentSchedule.length > 0;
+
       installmentSchedule.push({
         installmentNumber: installmentNumber,
         amount: installmentAmount,
         dueDate: dueDate,
         status: isOverdue ? "overdue" : "upcoming",
         isOverdue: isOverdue,
-        overdueDays: isOverdue ? Math.floor((currentDate - dueDate) / (1000 * 60 * 60 * 24)) : 0,
+        overdueDays: isOverdue
+          ? Math.floor((currentDate - dueDate) / (1000 * 60 * 60 * 24))
+          : 0,
       });
     }
 
     // Calculate summary statistics
-    const paidInstallments = installmentSchedule.filter(i => i.status === 'paid');
-    const pendingInstallmentsCount = installmentSchedule.filter(i => i.status === 'pending').length;
-    const overdueInstallments = installmentSchedule.filter(i => i.status === 'overdue' || (i.status === 'upcoming' && i.isOverdue));
-    const upcomingInstallments = installmentSchedule.filter(i => i.status === 'upcoming' && !i.isOverdue);
+    const paidInstallments = installmentSchedule.filter(
+      (i) => i.status === "paid",
+    );
+    const pendingInstallmentsCount = installmentSchedule.filter(
+      (i) => i.status === "pending",
+    ).length;
+    const overdueInstallments = installmentSchedule.filter(
+      (i) => i.status === "overdue" || (i.status === "upcoming" && i.isOverdue),
+    );
+    const upcomingInstallments = installmentSchedule.filter(
+      (i) => i.status === "upcoming" && !i.isOverdue,
+    );
 
-    const totalPaidAmount = paidInstallments.reduce((sum, i) => sum + (i.amount || 0), 0);
-    const totalPendingAmount = pendingInstallments.reduce((sum, p) => sum + (p.amount || 0), 0);
-    const totalOverdueAmount = overdueInstallments.reduce((sum, i) => sum + (i.amount || 0), 0);
+    const totalPaidAmount = paidInstallments.reduce(
+      (sum, i) => sum + (i.amount || 0),
+      0,
+    );
+    const totalPendingAmount = pendingInstallments.reduce(
+      (sum, p) => sum + (p.amount || 0),
+      0,
+    );
+    const totalOverdueAmount = overdueInstallments.reduce(
+      (sum, i) => sum + (i.amount || 0),
+      0,
+    );
 
     // Calculate on-time payment rate
-    const onTimePayments = paidInstallments.filter(i => i.isOnTime).length;
-    const onTimeRate = paidInstallments.length > 0 
-      ? parseFloat(((onTimePayments / paidInstallments.length) * 100).toFixed(2))
-      : 0;
+    const onTimePayments = paidInstallments.filter((i) => i.isOnTime).length;
+    const onTimeRate =
+      paidInstallments.length > 0
+        ? parseFloat(
+            ((onTimePayments / paidInstallments.length) * 100).toFixed(2),
+          )
+        : 0;
 
     return res.status(200).json({
       success: true,
@@ -1611,7 +1769,8 @@ const getLenderInstallmentHistory = async (req, res) => {
           borrowerAadhaar: loan.aadhaarNumber,
           totalLoanAmount: loan.amount,
           totalPaidAmount: loan.totalPaid || 0,
-          remainingAmount: loan.remainingAmount || (loan.amount - (loan.totalPaid || 0)),
+          remainingAmount:
+            loan.remainingAmount || loan.amount - (loan.totalPaid || 0),
           loanStatus: loan.paymentStatus,
         },
         installmentPlan: {
@@ -1622,13 +1781,16 @@ const getLenderInstallmentHistory = async (req, res) => {
           upcomingInstallments: upcomingInstallments.length,
           installmentAmount: installmentAmount,
           frequency: frequency,
-          nextDueDate: installmentPlan.nextDueDate || calculateDueDate(loanStartDate, paidInstallments.length, daysToAdd),
+          nextDueDate:
+            installmentPlan.nextDueDate ||
+            calculateDueDate(loanStartDate, paidInstallments.length, daysToAdd),
         },
         summary: {
           totalPaidAmount: totalPaidAmount,
           totalPendingAmount: totalPendingAmount,
           totalOverdueAmount: totalOverdueAmount,
-          totalRemainingAmount: loan.remainingAmount || (loan.amount - (loan.totalPaid || 0)),
+          totalRemainingAmount:
+            loan.remainingAmount || loan.amount - (loan.totalPaid || 0),
           onTimePayments: onTimePayments,
           totalPaidInstallments: paidInstallments.length,
           onTimePaymentRate: onTimeRate,
@@ -1642,12 +1804,14 @@ const getLenderInstallmentHistory = async (req, res) => {
         },
         actions: {
           pendingPaymentsCount: pendingInstallmentsCount,
-          requiresAction: pendingInstallmentsCount > 0 || overdueInstallments.length > 0,
-          message: pendingInstallmentsCount > 0 
-            ? `You have ${pendingInstallmentsCount} pending payment(s) awaiting confirmation`
-            : overdueInstallments.length > 0
-            ? `You have ${overdueInstallments.length} overdue installment(s)`
-            : null,
+          requiresAction:
+            pendingInstallmentsCount > 0 || overdueInstallments.length > 0,
+          message:
+            pendingInstallmentsCount > 0
+              ? `You have ${pendingInstallmentsCount} pending payment(s) awaiting confirmation`
+              : overdueInstallments.length > 0
+                ? `You have ${overdueInstallments.length} overdue installment(s)`
+                : null,
         },
       },
     });
@@ -1685,10 +1849,10 @@ const getBorrowerRiskAssessment = async (req, res) => {
     }
 
     // Check if borrower exists
-    const borrower = await User.findOne({ 
+    const borrower = await User.findOne({
       aadharCardNo: aadhaarNumber,
-      roleId: 2 // Borrower role
-    }).select('userName email mobileNo aadharCardNo fraudDetection');
+      roleId: 2, // Borrower role
+    }).select("userName email mobileNo aadharCardNo fraudDetection");
 
     if (!borrower) {
       return res.status(404).json({
@@ -1703,7 +1867,10 @@ const getBorrowerRiskAssessment = async (req, res) => {
     // Determine risk badge
     const riskBadge = {
       level: fraudDetails.riskLevel, // "low", "medium", "high", "critical"
-      label: fraudDetails.riskLevel.charAt(0).toUpperCase() + fraudDetails.riskLevel.slice(1) + " Risk",
+      label:
+        fraudDetails.riskLevel.charAt(0).toUpperCase() +
+        fraudDetails.riskLevel.slice(1) +
+        " Risk",
       color: getRiskBadgeColor(fraudDetails.riskLevel),
       score: fraudDetails.fraudScore,
     };
@@ -1733,10 +1900,14 @@ const getBorrowerRiskAssessment = async (req, res) => {
         details: {
           multipleLoans: {
             flagged: fraudDetails.details.multipleLoans.flagged || false,
-            totalActiveLoans: fraudDetails.details.multipleLoans.totalActiveLoans || 0,
-            loansIn30Days: fraudDetails.details.multipleLoans.loansIn30Days || 0,
-            loansIn90Days: fraudDetails.details.multipleLoans.loansIn90Days || 0,
-            loansIn180Days: fraudDetails.details.multipleLoans.loansIn180Days || 0,
+            totalActiveLoans:
+              fraudDetails.details.multipleLoans.totalActiveLoans || 0,
+            loansIn30Days:
+              fraudDetails.details.multipleLoans.loansIn30Days || 0,
+            loansIn90Days:
+              fraudDetails.details.multipleLoans.loansIn90Days || 0,
+            loansIn180Days:
+              fraudDetails.details.multipleLoans.loansIn180Days || 0,
           },
           pendingLoans: {
             count: fraudDetails.details.pendingLoans.count || 0,
@@ -1745,15 +1916,18 @@ const getBorrowerRiskAssessment = async (req, res) => {
           overdueLoans: {
             count: fraudDetails.details.overdueLoans.count || 0,
             totalAmount: fraudDetails.details.overdueLoans.amount || 0,
-            maxOverdueDays: fraudDetails.details.overdueLoans.maxOverdueDays || 0,
-            severeOverdueCount: fraudDetails.details.overdueLoans.severeOverdueCount || 0,
+            maxOverdueDays:
+              fraudDetails.details.overdueLoans.maxOverdueDays || 0,
+            severeOverdueCount:
+              fraudDetails.details.overdueLoans.severeOverdueCount || 0,
           },
         },
         recommendation: fraudDetails.recommendation,
         lastChecked: fraudDetails.flags.lastFraudCheck,
-        warning: fraudDetails.riskLevel !== 'low' 
-          ? `⚠️ ${riskBadge.label}: ${fraudDetails.recommendation}`
-          : null,
+        warning:
+          fraudDetails.riskLevel !== "low"
+            ? `⚠️ ${riskBadge.label}: ${fraudDetails.recommendation}`
+            : null,
       },
     });
   } catch (error) {
@@ -1840,4 +2014,3 @@ module.exports = {
   getBorrowerRiskAssessment,
   getBorrowersList,
 };
-

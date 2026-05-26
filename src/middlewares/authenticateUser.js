@@ -18,14 +18,6 @@ const authenticateUser = (req, res, next) => {
       process.env.JWT_SECRET || "LoanManagement"
     );
 
-    // DEBUG 
-    console.log("=== AUTH DEBUG ===");
-    console.log("decoded.id:", decoded.id);
-    console.log("decoded.roleId:", decoded.roleId);
-    console.log("decoded.isImpersonating:", decoded.isImpersonating);
-    console.log("decoded.adminId:", decoded.adminId);
-    console.log("==================");
-
     req.user = {
       id: decoded.id,
       roleId: decoded.roleId,
@@ -33,12 +25,6 @@ const authenticateUser = (req, res, next) => {
       adminId: decoded.adminId || null,
       adminName: decoded.adminName || null,
     };
-    console.log("Authenticated User:", {
-  id: decoded.id,
-  roleId: decoded.roleId,
-  isImpersonating: decoded.isImpersonating,
-  adminId: decoded.adminId
-});
 
     next();
   } catch (err) {
