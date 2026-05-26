@@ -2,14 +2,11 @@ const User = require("../models/User");
 
 const checkAdminOrLender = async (req, res, next) => {
   try {
-    console.log("=== CHECKADMINORLENDER DEBUG ===");
-    console.log("req.user:", req.user);
 
     // Impersonation case (Admin acting as Lender)
     if (req.user?.isImpersonating === true && req.user?.adminId) {
       const actualAdmin = await User.findById(req.user.adminId).select("roleId");
       if (actualAdmin && actualAdmin.roleId === 0) {
-        console.log(" Impersonation verified - Allowing access");
         req.isImpersonating = true;
         req.adminId = req.user.adminId;
         return next();
@@ -34,7 +31,6 @@ const checkAdminOrLender = async (req, res, next) => {
       });
     }
 
-    console.log(` Access granted for roleId: ${user.roleId}`);
 
     if (user.roleId === 0) req.admin = user;
     if (user.roleId === 1) req.lender = user;
