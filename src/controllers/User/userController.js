@@ -7,7 +7,7 @@ const { normalizeIndianMobile } = require("../../utils/authHelpers");
 
 // Update Profile API
 const updateProfile = async (req, res) => {
-  const { userName, email, mobileNo, address } = req.body.userData;
+  const { userName, email, mobileNo, address } = req.body;
   const userId = req.user.id;
 
   try {

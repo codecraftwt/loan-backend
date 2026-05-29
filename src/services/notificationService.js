@@ -459,6 +459,44 @@ async function sendSubscriptionReminderNotification(lenderId, planName, remainin
   }
 }
 
+// Send loan extension notification to borrower
+// async function sendLoanExtensionNotification(borrowerAadhaar, loan, lenderName, daysExtended, penaltyAmount) {
+//   try {
+//     const borrower = await User.findOne({ aadharCardNo: borrowerAadhaar });
+//     if (!borrower || !borrower.deviceTokens || borrower.deviceTokens.length === 0) {
+//       return;
+//     }
+
+//     const notificationId = `${borrower.userName}_extension_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+
+//     const message = {
+//       notification: {
+//         title: "Loan Due Date Extended",
+//         body: `Your loan due date has been extended by ${daysExtended} day${daysExtended !== 1 ? 's' : ''} by ${lenderName}. Overdue fine: ₹${penaltyAmount}.`,
+//       },
+//       data: {
+//         screen: "LoanDetails",
+//         notificationId: notificationId,
+//         type: "loan_extension",
+//         loanId: loan._id.toString(),
+//         lenderName: lenderName,
+//         daysExtended: daysExtended.toString(),
+//         penaltyAmount: penaltyAmount.toString(),
+//       },
+//     };
+
+//     const promises = borrower.deviceTokens.map((token) => {
+//       return messaging.send({ ...message, token }).catch((error) => {
+//         console.error(`Error sending extension notification to borrower ${token}:`, error);
+//       });
+//     });
+
+//     await Promise.all(promises);
+//   } catch (error) {
+//     console.error("Error sending loan extension notification:", error);
+//   }
+// }
+
 module.exports = { 
   sendLoanStatusNotification, 
   sendLoanUpdateNotification, 
@@ -469,5 +507,6 @@ module.exports = {
   sendPendingPaymentNotificationToLender,
   sendPendingLoanNotificationToLender,
   sendPendingLoanNotificationToBorrower,
-  sendSubscriptionReminderNotification
+  sendSubscriptionReminderNotification,
+  // sendLoanExtensionNotification,
 };
