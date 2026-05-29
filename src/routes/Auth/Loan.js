@@ -12,6 +12,7 @@ const {
   getLoanStats,
   updateLoanAcceptanceStatus,
   getRecentActivities,
+  // extendLoanDueDate,
 } = require("../../controllers/Loans/LoansController");
 const authenticateUser = require("../../middlewares/authenticateUser");
 const router = express.Router();
@@ -39,6 +40,8 @@ router.patch(
   "/update-loan-acceptance-status/:loanId",
   updateLoanAcceptanceStatus
 );
+
+// router.patch("/extend-due-date/:loanId", authenticateUser, extendLoanDueDate);
 
 router.patch("/:id", updateLoanDetails);
 

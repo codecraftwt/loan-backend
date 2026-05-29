@@ -81,7 +81,6 @@ const loanSchema = new mongoose.Schema(
       enum: ["pending", "verified"],
       default: "pending",
     },
-    // Payment tracking fields
     paymentType: {
       type: String,
       enum: ["one-time", "installment"],
@@ -97,7 +96,6 @@ const loanSchema = new mongoose.Schema(
       enum: ["cash", "online"],
       default: null,
     },
-    // Razorpay payment fields (for online loan creation)
     razorpayOrderId: {
       type: String,
       default: null,
@@ -126,7 +124,6 @@ const loanSchema = new mongoose.Schema(
         return this.amount;
       },
     },
-    // Installment tracking
     installmentPlan: {
       totalInstallments: {
         type: Number,
@@ -152,7 +149,6 @@ const loanSchema = new mongoose.Schema(
         default: "monthly",
       },
     },
-    // Payment history
     paymentHistory: [{
       amount: {
         type: Number,
@@ -188,7 +184,6 @@ const loanSchema = new mongoose.Schema(
         type: String,
         default: null,
       },
-      // Razorpay payment fields (for online payments)
       razorpayOrderId: {
         type: String,
         default: null,
@@ -216,7 +211,6 @@ const loanSchema = new mongoose.Schema(
         default: null,
       },
     }],
-    // Overdue tracking
     overdueDetails: {
       isOverdue: {
         type: Boolean,
@@ -238,7 +232,38 @@ const loanSchema = new mongoose.Schema(
         type: Boolean,
         default: false,
       },
+    //   overduePenalty: {
+    //     type: Number,
+    //     default: 0,
+    //   },
     },
+    // extensionHistory: [{
+    //   previousDueDate: {
+    //     type: Date,
+    //     required: true,
+    //   },
+    //   newDueDate: {
+    //     type: Date,
+    //     required: true,
+    //   },
+    //   extendedAt: {
+    //     type: Date,
+    //     default: Date.now,
+    //   },
+    //   extendedBy: {
+    //     type: mongoose.Schema.Types.ObjectId,
+    //     ref: "User",
+    //     required: true,
+    //   },
+    //   penaltyAmount: {
+    //     type: Number,
+    //     default: 0,
+    //   },
+    //   daysExtended: {
+    //     type: Number,
+    //     required: true,
+    //   },
+    // }],
     profileImage: {
       type: String,
     },

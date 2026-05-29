@@ -718,6 +718,98 @@ const checkAndUpdateOverdueLoans = async () => {
   }
 };
 
+// const extendLoanDueDate = async (req, res) => {
+//   const { loanId } = req.params;
+//   const { newDueDate } = req.body;
+//   const lenderId = req.user.id;
+
+//   if (!newDueDate) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "New due date is required",
+//     });
+//   }
+
+//   const newDueDateObj = new Date(newDueDate);
+//   if (isNaN(newDueDateObj.getTime())) {
+//     return res.status(400).json({
+//       success: false,
+//       message: "Invalid date format for new due date",
+//     });
+//   }
+
+//   try {
+//     const loan = await Loan.findById(loanId);
+//     if (!loan) {
+//       return res.status(404).json({ success: false, message: "Loan not found" });
+//     }
+
+//     if (loan.lenderId.toString() !== lenderId) {
+//       return res.status(403).json({ success: false, message: "Only the lender can extend the due date" });
+//     }
+
+//     const currentDate = new Date();
+//     if (loan.paymentStatus === "paid") {
+//       return res.status(400).json({ success: false, message: "Cannot extend a paid loan" });
+//     }
+
+//     const previousDueDate = new Date(loan.loanEndDate);
+//     const daysExtended = Math.ceil((newDueDateObj - previousDueDate) / (1000 * 60 * 60 * 24));
+    
+//     if (daysExtended <= 0) {
+//       return res.status(400).json({ success: false, message: "New due date must be after the current due date" });
+//     }
+
+//     const overdueDays = loan.overdueDetails?.overdueDays || 0;
+//     const dailyPenaltyRate = 0.01;
+//     const penaltyAmount = Math.round((loan.remainingAmount || loan.amount) * dailyPenaltyRate * overdueDays);
+
+//     loan.loanEndDate = newDueDateObj;
+//     loan.overdueDetails.isOverdue = false;
+//     loan.overdueDetails.overdueAmount = 0;
+//     loan.overdueDetails.overdueDays = 0;
+//     loan.overdueDetails.overduePenalty = penaltyAmount;
+//     loan.paymentStatus = "pending";
+
+//     loan.extensionHistory.push({
+//       previousDueDate,
+//       newDueDate: newDueDateObj,
+//       extendedBy: lenderId,
+//       penaltyAmount,
+//       daysExtended,
+//     });
+
+//     const updatedLoan = await loan.save();
+
+//     const borrower = await User.findOne({ aadharCardNo: loan.aadhaarNumber });
+//     const borrowerName = borrower?.userName || 'Borrower';
+
+//     await sendLoanUpdateNotification(loan.aadhaarNumber, updatedLoan);
+
+//     return res.status(200).json({
+//       success: true,
+//       message: "Loan due date extended successfully",
+//       data: {
+//         loanId: updatedLoan._id,
+//         previousDueDate,
+//         newDueDate: updatedLoan.loanEndDate,
+//         daysExtended,
+//         penaltyAmount,
+//         overdueFine: penaltyAmount,
+//         remainingAmount: updatedLoan.remainingAmount,
+//         paymentStatus: updatedLoan.paymentStatus,
+//       },
+//     });
+//   } catch (error) {
+//     console.error("Error extending loan due date:", error);
+//     return res.status(500).json({
+//       success: false,
+//       message: "Server error. Please try again later.",
+//       error: error.message,
+//     });
+//   }
+// };
+
 module.exports = {
   AddLoan,
   ShowAllLoan,
@@ -732,4 +824,5 @@ module.exports = {
   updateLoanAcceptanceStatus,
   getRecentActivities,
   checkAndUpdateOverdueLoans,
+  // extendLoanDueDate,
 };
