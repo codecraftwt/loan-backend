@@ -14,6 +14,7 @@ const AdminRoutes = require("./src/routes/Admin/adminRoutes");
 const PlanPurchaseRoutes = require("./src/routes/Plans/planPurchaseRoutes");
 const NotificationRoutes = require("./src/routes/Notifications/notificationRoutes");
 const RatingRoutes = require("./src/routes/ratingRoutes");
+const AadhaarRoutes = require('./src/routes/Borrower/aadhaarRoutes')
 
 const app = express();
 connectDB();
@@ -35,6 +36,7 @@ app.use("/api/admin", AdminRoutes);
 app.use("/api/plans", PlanPurchaseRoutes);
 app.use("/api/notifications", NotificationRoutes);
 app.use("/api/ratings", RatingRoutes);
+app.use('/api/borrower/ekyc/aadhaar', AadhaarRoutes)
 
 app.get("/", (req, res) => {
   res.send("Loan Management API is running..");
