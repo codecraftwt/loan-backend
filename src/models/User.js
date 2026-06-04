@@ -64,6 +64,14 @@ const userSchema = new mongoose.Schema(
         required: false, // Tokens are optional initially and will be updated later
       },
     ],
+    pinHash: {
+      type: String,
+      required: false,
+    },
+    pinCreatedAt: {
+      type: Date,
+      required: false,
+    },
     isActive: {
       type: Boolean,
       default: true

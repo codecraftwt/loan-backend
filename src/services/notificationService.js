@@ -342,7 +342,7 @@ async function sendPendingLoanNotificationToLender(lenderId, loan, borrowerName)
       data: {
         screen: "LoanDetails",
         notificationId: notificationId,
-        type: "pending_loan",
+        type: "sendLoanOfferNotificationToBorrower",
         loanId: loan._id.toString(),
         borrowerName: borrowerName,
         loanAmount: loan.amount.toString(),
@@ -382,7 +382,7 @@ async function sendPendingLoanNotificationToBorrower(borrowerAadhaar, loan, lend
       data: {
         screen: "LoanDetails",
         notificationId: notificationId,
-        type: "pending_loan",
+        type: "loan_offer",
         loanId: loan._id.toString(),
         lenderName: lenderName,
         loanAmount: loan.amount.toString(),
@@ -497,6 +497,53 @@ async function sendSubscriptionReminderNotification(lenderId, planName, remainin
 //   }
 // }
 
+// Send loan offer notification to borrower
+async function sendLoanOfferNotificationToBorrower(borrowerAadhaar, loan, lenderName) {
+  try {
+    const borrower = await User.findOne({ aadharCardNo: borrowerAadhaar });
+    if (!borrower) {
+      console.warn(`Borrower not found for Aadhaar: ${borrowerAadhaar}`);
+      return;
+    }
+    if (!borrower.deviceTokens || borrower.deviceTokens.length === 0) {
+      return;
+    }
+
+    const notificationId = `${borrower.userName}_offer_${Date.now().toString()}_${Math.random().toString(36).substring(2, 10)}`;
+
+    const message = {
+      notification: {
+        title: "New Loan Offer Received",
+        body: `You have received a loan offer of ₹${loan.amount} at ${loan.interestRate}% interest for ${loan.tenure} months from ${lenderName}`,
+      },
+      data: {
+        type: "loan_offer",
+        loanId: loan.loanId || loan._id.toString(),
+        amount: loan.amount.toString(),
+        interestRate: loan.interestRate.toString(),
+        tenure: loan.tenure.toString(),
+        lenderName: lenderName,
+        screen: "LoanDetails",
+        notificationId: notificationId,
+        openAcceptLoanModal: "true"
+      },
+    };
+
+    const promises = borrower.deviceTokens.map((token) => {
+      return messaging.send({ ...message, token }).catch((error) => {
+        console.error(`Error sending loan offer notification to borrower ${token}:`, error);
+        if (error.code === 'messaging/invalid-registration-token' ||
+            error.code === 'messaging/registration-token-not-registered') {
+        }
+      });
+    });
+
+    await Promise.all(promises);
+  } catch (error) {
+    console.error("Error sending loan offer notification to borrower:", error);
+  }
+}
+
 module.exports = { 
   sendLoanStatusNotification, 
   sendLoanUpdateNotification, 
@@ -508,5 +555,6 @@ module.exports = {
   sendPendingLoanNotificationToLender,
   sendPendingLoanNotificationToBorrower,
   sendSubscriptionReminderNotification,
+  sendLoanOfferNotificationToBorrower,
   // sendLoanExtensionNotification,
 };

@@ -1,5 +1,6 @@
 const Loan = require("../../models/Loan");
 const User = require("../../models/User");
+const bcrypt = require("bcryptjs");
 const {
   sendLoanStatusNotification,
   sendLoanUpdateNotification,
@@ -444,7 +445,11 @@ const getMyLoans = async (req, res) => {
       return res.status(404).json({ message: "Borrower profile not found or Aadhaar number missing" });
     }
 
-    const query = { aadhaarNumber: borrower.aadharCardNo };
+    // only fetch loans that have been ACCEPTED via PIN
+    const query = { 
+      aadhaarNumber: borrower.aadharCardNo,
+      borrowerAcceptanceStatus: "accepted" 
+    };
 
     // Add filters
     if (startDate) query.loanStartDate = { $gte: new Date(startDate) };
@@ -459,7 +464,7 @@ const getMyLoans = async (req, res) => {
 
     // Add name search if provided
     if (search) {
-      query.name = { $regex: search, $options: 'i' }; // Case-insensitive search
+      query.name = { $regex: search, $options: 'i' };
     }
 
     const options = {
@@ -483,13 +488,9 @@ const getMyLoans = async (req, res) => {
     let filteredLoans = loans;
     if (search) {
       filteredLoans = loans.filter(loan => {
-        // Only include loans that have a lender AND match the search
         if (!loan.lenderId) return false;
-
-        // Check if lender matches search criteria
         const lender = loan.lenderId;
         const searchLower = search.toLowerCase();
-
         return (
           lender.userName?.toLowerCase().includes(searchLower) ||
           lender.email?.toLowerCase().includes(searchLower) ||
@@ -507,12 +508,11 @@ const getMyLoans = async (req, res) => {
     const totalAmountPaid = filteredLoans.reduce((sum, loan) => sum + loan.totalPaid, 0);
     const totalAmountRemaining = filteredLoans.reduce((sum, loan) => sum + loan.remainingAmount, 0);
 
-    // Enhance loan data with better installment and payment information
+    // Enhance loan data
     const enhancedLoans = filteredLoans.map(loan => {
       const pendingPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'pending');
       const confirmedPayments = loan.paymentHistory.filter(p => p.paymentStatus === 'confirmed');
 
-      // Group payments by installment number for better display
       const installmentBreakdown = confirmedPayments.map((payment, index) => ({
         installmentNumber: index + 1,
         amount: payment.amount,
@@ -575,6 +575,101 @@ const getMyLoans = async (req, res) => {
     return res.status(500).json({
       message: "Server error. Please try again later.",
       error: error.message,
+    });
+  }
+};
+
+/**
+ * Get pending loan offers for borrower
+ * Returns loans where borrower has not yet accepted/rejected and loan is not confirmed
+ */
+const getPendingLoanOffers = async (req, res) => {
+  try {
+    const { borrowerId } = req.params;
+    const authenticatedUserId = req.user.id;
+
+    // Validate borrowerId format
+    if (!borrowerId || borrowerId.length !== 24) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid borrower ID format"
+      });
+    }
+
+    // Authorization: User can only view their own pending loans
+    if (authenticatedUserId !== borrowerId) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied. You can only view your own loan offers."
+      });
+    }
+
+    // Get borrower's Aadhaar number
+    const borrower = await User.findById(borrowerId).select('aadharCardNo userName');
+    if (!borrower) {
+      return res.status(404).json({
+        success: false,
+        message: "Borrower not found"
+      });
+    }
+
+    // Find pending loans for this borrower
+    // Conditions:
+    // 1. borrowerAcceptanceStatus is 'pending' (not yet accepted/rejected)
+    // 2. paymentStatus is 'pending' (not active/paid)
+    // 3. loanConfirmed is false (not already confirmed via OTP)
+    const pendingLoans = await Loan.find({
+      aadhaarNumber: borrower.aadharCardNo,
+      borrowerAcceptanceStatus: { $in: ['pending', null, undefined] },
+      paymentStatus: { $in: ['pending', 'active'] },
+      $or: [
+        { loanConfirmed: { $ne: true } },
+        { loanConfirmed: { $exists: false } }
+      ]
+    })
+    .populate('lenderId', 'userName email mobileNo profileImage')
+    .sort({ createdAt: -1 });
+
+    // Format response
+    const formattedLoans = pendingLoans.map(loan => ({
+      _id: loan._id,
+      loanId: loan._id,
+      amount: loan.amount,
+      interestRate: loan.interestRate,
+      tenure: loan.tenure,
+      loanStatus: loan.borrowerAcceptanceStatus === 'accepted' ? 'ACTIVE' : 'PENDING',
+      paymentStatus: loan.paymentStatus,
+      lenderId: loan.lenderId ? {
+        _id: loan.lenderId._id,
+        userName: loan.lenderId.userName,
+        email: loan.lenderId.email,
+        mobileNo: loan.lenderId.mobileNo,
+        profileImage: loan.lenderId.profileImage
+      } : null,
+      lenderName: loan.lenderId?.userName || 'Unknown Lender',
+      createdAt: loan.createdAt,
+      loanEndDate: loan.loanEndDate,
+      remainingAmount: loan.remainingAmount || loan.amount,
+      totalPaid: loan.totalPaid || 0,
+      name: loan.name,
+      proof: loan.proof
+    }));
+
+    return res.status(200).json({
+      success: true,
+      message: pendingLoans.length > 0 
+        ? 'Pending loan offers fetched successfully'
+        : 'No pending loan offers found',
+      data: formattedLoans,
+      count: formattedLoans.length
+    });
+
+  } catch (error) {
+    console.error('Error fetching pending loan offers:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pending loan offers. Please try again later.',
+      error: error.message
     });
   }
 };
@@ -1556,8 +1651,75 @@ function calculateDueDate(startDate, installmentIndex, daysToAdd) {
   return dueDate;
 }
 
+const acceptLoan = async (req, res) => {
+  const { loanId } = req.params;
+  const { pin } = req.body;
+  const borrowerId = req.user.id;
+
+  try {
+    if (!pin) {
+      return res.status(400).json({ success: false, message: "PIN is required" });
+    }
+
+    const borrower = await User.findById(borrowerId);
+    if (!borrower) {
+      return res.status(404).json({ success: false, message: "Borrower not found" });
+    }
+
+    if (!borrower.pinHash) {
+      return res.status(400).json({ success: false, message: "Security PIN not set. Please set up your PIN first." });
+    }
+
+    // Verify PIN
+    const isMatch = await bcrypt.compare(pin, borrower.pinHash);
+    if (!isMatch) {
+      return res.status(400).json({ success: false, message: "Incorrect PIN. Please try again." });
+    }
+
+    const loan = await Loan.findById(loanId);
+    if (!loan) {
+      return res.status(404).json({ success: false, message: "Loan not found" });
+    }
+
+    if (loan.aadhaarNumber !== borrower.aadharCardNo) {
+      return res.status(403).json({ success: false, message: "You can only accept your own loans" });
+    }
+
+    if (loan.borrowerAcceptanceStatus === "accepted") {
+      return res.status(400).json({ success: false, message: "Loan is already accepted" });
+    }
+
+    loan.borrowerAcceptanceStatus = "accepted";
+    if (loan.paymentStatus === "pending") {
+      loan.paymentStatus = "active";
+    }
+    
+    await loan.save();
+
+    try {
+      await sendLoanStatusNotification(loan.lenderId, loan.name, "accepted");
+    } catch (notifErr) {
+      console.error("Error sending notification:", notifErr);
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Loan accepted successfully",
+      loan,
+    });
+  } catch (error) {
+    console.error("Error accepting loan:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   getLoanByAadhaar,
+  acceptLoan,
   updateLoanAcceptanceStatus,
   makeLoanPayment,
   getPaymentHistory,
@@ -1567,4 +1729,5 @@ module.exports = {
   createRazorpayOrderForPayment,
   verifyRazorpayPayment,
   getInstallmentHistory,
+  getPendingLoanOffers,
 };

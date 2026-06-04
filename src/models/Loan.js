@@ -60,7 +60,7 @@ const loanSchema = new mongoose.Schema(
     },
     paymentStatus: {
       type: String,
-      enum: ["pending", "part paid", "paid", "overdue"],
+      enum: ["pending", "part paid", "paid", "overdue",'active'],
       default: "pending",
     },
     borrowerAcceptanceStatus: {

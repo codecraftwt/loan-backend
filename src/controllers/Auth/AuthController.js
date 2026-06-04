@@ -20,6 +20,8 @@ const signupUser = async (req, res) => {
     mobileNo,
     panCardNumber,
     roleId,
+    pinHash,
+    pinCreatedAt,
   } = req.body;
 
   try {
@@ -148,6 +150,8 @@ const signupUser = async (req, res) => {
       profileImage: profileImageUrl,
       roleId,
       isMobileVerified: true, // Set to true since we're skipping OTP verification
+      pinHash,
+      pinCreatedAt: pinCreatedAt ? new Date(pinCreatedAt) : undefined,
     });
 
     await newUser.save();

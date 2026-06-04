@@ -1,6 +1,7 @@
 const express = require("express");
 const {
   getLoanByAadhaar,
+  acceptLoan,
   updateLoanAcceptanceStatus,
   makeLoanPayment,
   getPaymentHistory,
@@ -10,6 +11,7 @@ const {
   createRazorpayOrderForPayment,
   verifyRazorpayPayment,
   getInstallmentHistory,
+  getPendingLoanOffers
 } = require("../../controllers/Borrower/borrowerLoanController");
 const multer = require("multer");
 const path = require("path");
@@ -57,6 +59,22 @@ router.patch(
   authenticateUser,
   checkBorrower,
   updateLoanAcceptanceStatus
+);
+
+// Accept loan with PIN
+router.post(
+  "/accept/:loanId",
+  authenticateUser,
+  checkBorrower,
+  acceptLoan
+);
+
+// Get pending loan offers for borrower (loans waiting for acceptance)
+router.get(
+  "/pending/:borrowerId",
+  authenticateUser,
+  checkBorrower,
+  getPendingLoanOffers
 );
 
 // Make loan payment (borrower pays loan) - for cash payments

@@ -2,6 +2,7 @@ const Loan = require("../../models/Loan");
 const User = require("../../models/User");
 const {
   sendLoanUpdateNotification,
+  sendPendingLoanNotificationToBorrower,
 } = require("../../services/notificationService");
 const paginateQuery = require("../../utils/pagination");
 const { generateLoanAgreement } = require("../../services/agreementService");
@@ -183,7 +184,7 @@ const createLoan = async (req, res) => {
     await newLoan.save();
 
     // Send notification (non-blocking - won't throw error if no device tokens)
-    sendLoanUpdateNotification(LoanData.aadharCardNo, LoanData).catch(
+    sendPendingLoanNotificationToBorrower(LoanData.aadharCardNo, newLoan, lender.userName || lender.name).catch(
       (err) => {},
     );
 
@@ -217,8 +218,8 @@ const createLoan = async (req, res) => {
       success: true,
       message:
         LoanData.loanMode === "online"
-          ? "Loan created successfully. Please complete the Razorpay payment to proceed. OTP will be sent after payment verification."
-          : "Loan created successfully. OTP sent to borrower's mobile number.",
+          ? "Loan created successfully. Please complete the Razorpay payment to proceed."
+          : "Loan created successfully. Notification sent to borrower for PIN verification.",
       data: responseData,
     });
   } catch (error) {
@@ -1444,11 +1445,6 @@ const verifyLoanPayment = async (req, res) => {
 
     await loan.save();
 
-    // Send notification to borrower (non-blocking)
-    sendLoanUpdateNotification(loan.aadhaarNumber, loan).catch((err) => {
-      console.log("Notification skipped:", err.message);
-    });
-
     // Populate loan details for response
     const verifiedLoan = await Loan.findById(loan._id)
       .populate("lenderId", "userName email mobileNo profileImage")
@@ -1458,10 +1454,15 @@ const verifyLoanPayment = async (req, res) => {
         strictPopulate: false,
       });
 
+    // Send notification to borrower (non-blocking)
+    sendPendingLoanNotificationToBorrower(loan.aadhaarNumber, loan, verifiedLoan.lenderId?.userName || "Lender").catch((err) => {
+      console.log("Notification skipped:", err.message);
+    });
+
     return res.status(200).json({
       success: true,
       message:
-        "Payment verified successfully. Please verify OTP to confirm the loan.",
+        "Payment verified successfully. Notification sent to borrower for PIN verification.",
       data: {
         loan: verifiedLoan,
         paymentDetails: {
@@ -1472,7 +1473,7 @@ const verifyLoanPayment = async (req, res) => {
           paymentStatus: "completed",
         },
         nextStep:
-          "Verify OTP using the verify-otp endpoint to complete loan confirmation",
+          "Borrower must verify using their PIN to complete loan confirmation",
       },
     });
   } catch (error) {
