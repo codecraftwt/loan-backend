@@ -2,6 +2,7 @@ const express = require("express");
 const {
   getLoanByAadhaar,
   updateLoanAcceptanceStatus,
+  acceptLoanWithPin,
   makeLoanPayment,
   getPaymentHistory,
   getMyLoans,
@@ -57,6 +58,14 @@ router.patch(
   authenticateUser,
   checkBorrower,
   updateLoanAcceptanceStatus
+);
+
+// Accept a loan using borrower PIN
+router.post(
+  "/accept/:loanId",
+  authenticateUser,
+  checkBorrower,
+  acceptLoanWithPin
 );
 
 // Make loan payment (borrower pays loan) - for cash payments

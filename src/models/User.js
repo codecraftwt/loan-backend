@@ -57,6 +57,15 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    pinHash: {
+      type: String,
+      required: false,
+      select: false,
+    },
+    pinCreatedAt: {
+      type: Date,
+      required: false,
+    },
     // Store multiple device tokens as an array
     deviceTokens: [
       {

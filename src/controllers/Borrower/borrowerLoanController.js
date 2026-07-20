@@ -7,6 +7,7 @@ const {
 const paginateQuery = require("../../utils/pagination");
 const razorpayInstance = require("../../config/razorpay.config");
 const crypto = require("crypto");
+const bcrypt = require("bcryptjs");
 const cloudinary = require("cloudinary").v2;
 
 // Get loans by Aadhaar (borrower views their loans)
@@ -171,6 +172,104 @@ const updateLoanAcceptanceStatus = async (req, res) => {
   } catch (error) {
     console.error("Error updating loan status:", error);
     return res.status(500).json({
+      message: "Server error. Please try again later.",
+      error: error.message,
+    });
+  }
+};
+
+// Accept a loan using borrower PIN
+const acceptLoanWithPin = async (req, res) => {
+  try {
+    const { loanId } = req.params;
+    const { pin } = req.body;
+    const borrowerId = req.user.id;
+
+    if (!loanId) {
+      return res.status(400).json({
+        success: false,
+        message: "Loan ID is required",
+      });
+    }
+
+    if (!pin || !/^\d{4}$/.test(String(pin))) {
+      return res.status(400).json({
+        success: false,
+        message: "Valid 4-digit PIN is required",
+      });
+    }
+
+    const borrower = await User.findById(borrowerId).select(
+      "+pinHash aadharCardNo userName roleId"
+    );
+
+    if (!borrower) {
+      return res.status(404).json({
+        success: false,
+        message: "Borrower not found",
+      });
+    }
+
+    if (!borrower.pinHash) {
+      return res.status(400).json({
+        success: false,
+        message: "PIN is not set. Please create or reset your PIN.",
+      });
+    }
+
+    const isPinValid = await bcrypt.compare(String(pin), borrower.pinHash);
+    if (!isPinValid) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid PIN",
+      });
+    }
+
+    const loan = await Loan.findById(loanId);
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan not found",
+      });
+    }
+
+    if (loan.aadhaarNumber !== borrower.aadharCardNo) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to accept this loan",
+      });
+    }
+
+    if (loan.borrowerAcceptanceStatus === "accepted") {
+      return res.status(400).json({
+        success: false,
+        message: "Loan is already accepted",
+      });
+    }
+
+    if (loan.borrowerAcceptanceStatus === "rejected") {
+      return res.status(400).json({
+        success: false,
+        message: "Rejected loan cannot be accepted",
+      });
+    }
+
+    loan.borrowerAcceptanceStatus = "accepted";
+    loan.otpVerified = "verified";
+    await loan.save();
+
+    await sendLoanStatusNotification(loan.lenderId, loan.name, "accepted");
+
+    return res.status(200).json({
+      success: true,
+      message: "Loan accepted successfully",
+      data: loan,
+      loan,
+    });
+  } catch (error) {
+    console.error("Error accepting loan with PIN:", error);
+    return res.status(500).json({
+      success: false,
       message: "Server error. Please try again later.",
       error: error.message,
     });
@@ -1559,6 +1658,7 @@ function calculateDueDate(startDate, installmentIndex, daysToAdd) {
 module.exports = {
   getLoanByAadhaar,
   updateLoanAcceptanceStatus,
+  acceptLoanWithPin,
   makeLoanPayment,
   getPaymentHistory,
   getMyLoans,

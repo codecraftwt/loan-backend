@@ -20,6 +20,8 @@ const signupUser = async (req, res) => {
     mobileNo,
     panCardNumber,
     roleId,
+    pinHash,
+    pinCreatedAt,
   } = req.body;
 
   try {
@@ -148,6 +150,8 @@ const signupUser = async (req, res) => {
       profileImage: profileImageUrl,
       roleId,
       isMobileVerified: true, // Set to true since we're skipping OTP verification
+      pinHash,
+      pinCreatedAt: pinCreatedAt ? new Date(pinCreatedAt) : undefined,
     });
 
     await newUser.save();
@@ -403,11 +407,46 @@ const resetPassword = async (req, res) => {
   }
 };
 
+const resetPin = async (req, res) => {
+  const { pinHash, pinCreatedAt } = req.body;
+
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    if (!pinHash) {
+      return res.status(400).json({ message: "PIN hash is required" });
+    }
+
+    const user = await User.findById(req.user.id).select("+pinHash");
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    user.pinHash = pinHash;
+    user.pinCreatedAt = pinCreatedAt ? new Date(pinCreatedAt) : new Date();
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: "PIN reset successfully",
+    });
+  } catch (error) {
+    console.error("Error resetting PIN:", error);
+    return res.status(500).json({
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   signupUser,
   signInUser,
   requestPasswordReset,
   resendPasswordResetOtp,
   resetPassword,
+  resetPin,
   verifyOtp,
 };
