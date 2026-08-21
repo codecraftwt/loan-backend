@@ -5,6 +5,7 @@ const {
   searchBorrowers,
 } = require("../../controllers/Borrower/borrowerController");
 const borrowerLoanRoutes = require("./borrowerLoanRoutes");
+const aadhaarKycRoutes = require("./aadhaarKycRoutes");
 const authenticateUser = require("../../middlewares/authenticateUser");
 
 const router = express.Router();
@@ -20,5 +21,8 @@ router.get("/borrowers/:id", authenticateUser, getBorrowerById);
 
 // Loan routes for borrowers
 router.use("/loans", borrowerLoanRoutes);
+
+// Aadhaar eKYC routes for borrowers (mock — see aadhaarKycController.js)
+router.use("/ekyc/aadhaar", aadhaarKycRoutes);
 
 module.exports = router;

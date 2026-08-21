@@ -68,12 +68,16 @@ if (transporter) {
   });
 }
 
-const sendVerificationEmail = async (to, code) => {
-  const subject = "Password Reset Verification Code";
-  const text = `Your verification code is: ${code}. This code is valid for a limited time.`;
+const sendVerificationEmail = async (to, code, purpose = "password") => {
+  const copyByPurpose = {
+    password: { subject: "Password Reset Verification Code", action: "reset your password" },
+    pin: { subject: "PIN Reset Verification Code", action: "reset your security PIN" },
+  };
+  const { subject, action } = copyByPurpose[purpose] || { subject: "Verification Code", action: "verify your request" };
+  const text = `Your verification code is: ${code}. Use it to ${action}. This code is valid for a limited time.`;
   const html = `
     <p>Your verification code is: <strong>${code}</strong></p>
-    <p>This code is valid for a limited time. Do not share it with anyone.</p>
+    <p>Use it to ${action}. This code is valid for a limited time. Do not share it with anyone.</p>
   `.trim();
 
 

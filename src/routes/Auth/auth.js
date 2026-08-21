@@ -7,6 +7,8 @@ const {
   requestPasswordReset,
   resendPasswordResetOtp,
   verifyOtp,
+  requestPinResetOtp,
+  verifyPinResetOtp,
 } = require("../../controllers/Auth/AuthController");
 const upload = require("../../config/multerConfig");
 const authenticateUser = require("../../middlewares/authenticateUser");
@@ -20,6 +22,8 @@ router.post("/resend-otp", resendPasswordResetOtp);
 router.post("/reset-password", resetPassword);
 router.post("/reset-pin", authenticateUser, resetPin);
 router.post("/verify-otp", verifyOtp);
+router.post("/forgot-pin/request-otp", authenticateUser, requestPinResetOtp);
+router.post("/forgot-pin/verify-otp", authenticateUser, verifyPinResetOtp);
 
 // Diagnostic endpoint to check email configuration (remove in production if needed)
 router.get("/check-email-config", (req, res) => {

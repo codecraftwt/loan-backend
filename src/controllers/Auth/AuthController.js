@@ -407,8 +407,89 @@ const resetPassword = async (req, res) => {
   }
 };
 
+// OTP store for the forgot-PIN flow (separate from password-reset OTPs above)
+const pinResetCodes = {};
+const lastPinOtpSentAt = {};
+const PIN_OTP_COOLDOWN_MS = 60 * 1000; // 1 minute
+
+/** Step 1: send a 4-digit OTP to the logged-in user's registered email. */
+const requestPinResetOtp = async (req, res) => {
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if (!user.email) {
+      return res.status(400).json({ message: "No email address is registered on this account." });
+    }
+
+    const normalizedEmail = user.email.toLowerCase();
+
+    const lastSent = lastPinOtpSentAt[normalizedEmail];
+    if (lastSent && Date.now() - lastSent < PIN_OTP_COOLDOWN_MS) {
+      const waitSec = Math.ceil((PIN_OTP_COOLDOWN_MS - (Date.now() - lastSent)) / 1000);
+      return res.status(429).json({
+        message: "Please wait before requesting another code.",
+        retryAfterSeconds: waitSec,
+      });
+    }
+
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+    pinResetCodes[normalizedEmail] = otp;
+    lastPinOtpSentAt[normalizedEmail] = Date.now();
+
+    try {
+      await sendVerificationEmail(user.email, otp, "pin");
+    } catch (emailError) {
+      return res.status(500).json({
+        message: "Failed to send verification email. Please try again later or contact support.",
+        error: emailError.message,
+      });
+    }
+
+    return res.status(200).json({ message: "Verification code sent to your email" });
+  } catch (error) {
+    console.error("requestPinResetOtp error:", error);
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+/** Step 2: verify the OTP before letting the user move on to setting a new PIN. */
+const verifyPinResetOtp = async (req, res) => {
+  const { otp } = req.body;
+
+  try {
+    if (!req.user?.id) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+    if (!otp) {
+      return res.status(400).json({ message: "OTP is required." });
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user?.email) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const normalizedEmail = user.email.toLowerCase();
+    if (pinResetCodes[normalizedEmail] !== otp) {
+      return res.status(400).json({ message: "Invalid verification code" });
+    }
+
+    return res.status(200).json({ message: "OTP verified successfully" });
+  } catch (error) {
+    console.error("verifyPinResetOtp error:", error);
+    return res.status(500).json({ message: "Server error", error: error.message });
+  }
+};
+
+/** Step 3: set the new PIN. Requires the same OTP verified in step 2 (removed afterwards). */
 const resetPin = async (req, res) => {
-  const { pinHash, pinCreatedAt } = req.body;
+  const { pinHash, pinCreatedAt, otp } = req.body;
 
   try {
     if (!req.user?.id) {
@@ -418,15 +499,25 @@ const resetPin = async (req, res) => {
     if (!pinHash) {
       return res.status(400).json({ message: "PIN hash is required" });
     }
+    if (!otp) {
+      return res.status(400).json({ message: "OTP is required" });
+    }
 
     const user = await User.findById(req.user.id).select("+pinHash");
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const normalizedEmail = (user.email || "").toLowerCase();
+    if (pinResetCodes[normalizedEmail] !== otp) {
+      return res.status(400).json({ message: "Invalid or expired verification code" });
+    }
+
     user.pinHash = pinHash;
     user.pinCreatedAt = pinCreatedAt ? new Date(pinCreatedAt) : new Date();
     await user.save();
+
+    delete pinResetCodes[normalizedEmail];
 
     return res.status(200).json({
       success: true,
@@ -449,4 +540,6 @@ module.exports = {
   resetPassword,
   resetPin,
   verifyOtp,
+  requestPinResetOtp,
+  verifyPinResetOtp,
 };
