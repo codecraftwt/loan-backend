@@ -16,7 +16,6 @@ const NotificationRoutes = require("./src/routes/Notifications/notificationRoute
 const RatingRoutes = require("./src/routes/ratingRoutes");
 
 const app = express();
-connectDB();
 
 // Import cron jobs
 require("./src/cron/loanCron");
@@ -42,6 +41,14 @@ app.get("/", (req, res) => {
 
 const port = process.env.PORT || 5001;
 
-app.listen(port, () => console.log(`Server running on port ${port}`));
+const startServer = async () => {
+  await connectDB();
+  app.listen(port, () => console.log(`Server running on port ${port}`));
+};
+
+startServer().catch((error) => {
+  console.error("Failed to start server:", error.message);
+  process.exit(1);
+});
 
 module.exports = app;

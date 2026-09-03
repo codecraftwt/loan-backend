@@ -8,6 +8,70 @@ const {
 } = require("../../utils/authHelpers");
 const cloudinary = require("../../config/cloudinaryConfig");
 
+const validatePasswordPolicy = (password) => {
+  if (!password || password.length < 8) {
+    return "Password must be at least 8 characters.";
+  }
+  if (!/[A-Z]/.test(password) || !/[a-z]/.test(password)) {
+    return "Password must include uppercase & lowercase letters.";
+  }
+  if (!/[0-9]/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+    return "Password must include numbers and symbols.";
+  }
+  return null;
+};
+
+const checkSignupAvailability = async (req, res) => {
+  const { email, mobileNo } = req.body;
+
+  try {
+    if (!email && !mobileNo) {
+      return res.status(400).json({ message: "Email or mobile number is required" });
+    }
+
+    const checks = [];
+    const labels = [];
+
+    if (email) {
+      const normalizedEmail = email.toLowerCase();
+      if (!validateEmail(normalizedEmail)) {
+        return res.status(400).json({ message: "Please provide a valid email address" });
+      }
+      checks.push(User.findOne({ email: normalizedEmail }));
+      labels.push("email");
+    }
+
+    if (mobileNo) {
+      const normalizedMobile = normalizeIndianMobile(mobileNo);
+      if (!normalizedMobile) {
+        return res.status(400).json({ message: "Please provide a valid Indian mobile number" });
+      }
+      checks.push(User.findOne({ mobileNo: normalizedMobile.e164 }));
+      labels.push("mobile");
+    }
+
+    const results = await Promise.all(checks);
+    const emailExists = results[labels.indexOf("email")];
+    const mobileExists = results[labels.indexOf("mobile")];
+
+    if (emailExists) {
+      return res.status(400).json({ message: "User with this email already exists" });
+    }
+
+    if (mobileExists) {
+      return res.status(400).json({ message: "Mobile number is already in use" });
+    }
+
+    return res.status(200).json({ available: true });
+  } catch (error) {
+    console.error("checkSignupAvailability error:", error);
+    return res.status(500).json({
+      message: "Unable to check signup details",
+      error: error.message,
+    });
+  }
+};
+
 // Signup - create user directly without OTP verification
 const signupUser = async (req, res) => {
   const {
@@ -64,6 +128,11 @@ const signupUser = async (req, res) => {
 
     if (password !== confirmPassword) {
       return res.status(400).json({ message: "Passwords do not match" });
+    }
+
+    const passwordError = validatePasswordPolicy(password);
+    if (passwordError) {
+      return res.status(400).json({ message: passwordError });
     }
 
     const normalizedMobile = normalizeIndianMobile(mobileNo);
@@ -533,6 +602,7 @@ const resetPin = async (req, res) => {
 };
 
 module.exports = {
+  checkSignupAvailability,
   signupUser,
   signInUser,
   requestPasswordReset,
