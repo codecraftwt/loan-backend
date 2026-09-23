@@ -8,9 +8,19 @@ const { getBorrowerReputation } = require("../../services/reputationScoringServi
  */
 const getAllBorrowers = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
+    const { page = 1, limit = 10, search } = req.query;
 
     const query = { roleId: 2 }; // 2 = borrower role
+
+    if (search && search.trim()) {
+      const searchTerm = search.trim();
+      query.$or = [
+        { userName: { $regex: searchTerm, $options: "i" } },
+        { aadharCardNo: { $regex: searchTerm, $options: "i" } },
+        { mobileNo: { $regex: searchTerm, $options: "i" } },
+        { email: { $regex: searchTerm, $options: "i" } },
+      ];
+    }
 
     const options = {
       sort: { createdAt: -1 },
@@ -25,17 +35,9 @@ const getAllBorrowers = async (req, res) => {
       options
     );
 
-    if (!borrowers.length) {
-      return res.status(404).json({
-        message: "No borrowers found",
-        data: [],
-        pagination,
-      });
-    }
-
     return res.status(200).json({
       message: "Borrowers fetched successfully",
-      data: borrowers,
+      data: borrowers || [],
       pagination,
     });
   } catch (error) {
