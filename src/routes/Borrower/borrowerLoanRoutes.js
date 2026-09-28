@@ -11,6 +11,8 @@ const {
   createRazorpayOrderForPayment,
   verifyRazorpayPayment,
   getInstallmentHistory,
+  applyCommercialLoan,
+  getBorrowerCommercialLoans,
 } = require("../../controllers/Borrower/borrowerLoanController");
 const multer = require("multer");
 const path = require("path");
@@ -96,5 +98,11 @@ router.post(
 // Get payment history for a loan (no authentication required)
 router.get("/payment-history/:loanId", getPaymentHistory);
 
+// Commercial Real Estate & Private Money Loan Application
+router.post("/apply-commercial", authenticateUser, checkBorrower, applyCommercialLoan);
+router.get("/commercial-loans", authenticateUser, checkBorrower, getBorrowerCommercialLoans);
+
 // Get installment history for a loan (installment loans only)
-router.get("/installment-history/:loanId", authenticateUser, checkBorrower, getInstallmentHistory);module.exports = router;
+router.get("/installment-history/:loanId", authenticateUser, checkBorrower, getInstallmentHistory);
+
+module.exports = router;

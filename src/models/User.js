@@ -131,6 +131,28 @@ const userSchema = new mongoose.Schema(
         details: { type: mongoose.Schema.Types.Mixed },
       }],
     },
+    // Commercial Lending & Entity Profile (Lender & Borrower)
+    companyName: {
+      type: String,
+      default: "",
+    },
+    ein: {
+      type: String,
+      default: "",
+    },
+    licenseNumber: {
+      type: String,
+      default: "",
+    },
+    stateOfOperation: {
+      type: String,
+      default: "",
+    },
+    subscriptionQuotas: {
+      activeDealsCount: { type: Number, default: 0 },
+      aiCreditsUsed: { type: Number, default: 0 },
+      aiCreditsLimit: { type: Number, default: 50 },
+    },
   },
   { timestamps: true }
 );

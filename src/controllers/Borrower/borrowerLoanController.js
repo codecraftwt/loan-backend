@@ -1647,13 +1647,186 @@ const getInstallmentHistory = async (req, res) => {
   }
 };
 
-// Helper function to calculate due date for an installment
-function calculateDueDate(startDate, installmentIndex, daysToAdd) {
-  const start = new Date(startDate);
-  const dueDate = new Date(start);
-  dueDate.setDate(dueDate.getDate() + (installmentIndex * daysToAdd));
-  return dueDate;
-}
+// Apply for Commercial Real Estate / Private Money Loan
+const applyCommercialLoan = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const user = await User.findById(userId);
+
+    const {
+      dealName,
+      loanPurpose = "fix_and_flip",
+      amount,
+      requestedTermMonths = 12,
+      interestRate = 10.5,
+      originationPoints = 2.0,
+      propertyDetails = {},
+      entityDetails = {},
+      borrowerExperience = {},
+      lenderId = null,
+    } = req.body;
+
+    if (!amount || Number(amount) < 1000) {
+      return res.status(400).json({
+        success: false,
+        message: "A valid loan amount of at least 1,000 is required.",
+      });
+    }
+
+    const { calculateUnderwriting } = require("../../services/underwritingEngine");
+    const { evaluateRisk } = require("../../services/riskScoringEngine");
+    const AuditLog = require("../../models/AuditLog");
+
+    // 1. Compute underwriting metrics
+    const underwritingCalculations = calculateUnderwriting({
+      loanAmount: Number(amount),
+      purchasePrice: Number(propertyDetails.purchasePrice) || Number(amount),
+      asIsValue: Number(propertyDetails.asIsValue) || Number(propertyDetails.purchasePrice) || Number(amount),
+      arv: Number(propertyDetails.arv) || Number(propertyDetails.asIsValue) || Number(amount),
+      rehabBudget: Number(propertyDetails.rehabBudget) || 0,
+      interestRate: Number(interestRate) || 10.5,
+      originationPoints: Number(originationPoints) || 2.0,
+      requestedTermMonths: Number(requestedTermMonths) || 12,
+      estimatedMonthlyRent: Number(propertyDetails.estimatedMonthlyRent) || 0,
+      annualTaxes: Number(propertyDetails.annualTaxes) || 0,
+      annualInsurance: Number(propertyDetails.annualInsurance) || 0,
+      creditScore: Number(borrowerExperience.creditScore) || 700,
+    });
+
+    // 2. Compute initial risk score
+    const riskData = evaluateRisk({
+      underwriting: underwritingCalculations,
+      propertyDetails,
+      borrowerExperience,
+    });
+
+    // 3. Generate default closing conditions
+    const conditionsChecklist = [
+      {
+        title: "Borrower KYC & Government ID Verification",
+        category: "borrower_kyc",
+        status: "pending",
+        assignedRole: "borrower",
+        notes: "Upload driver's license / passport for all 20%+ owners",
+      },
+      {
+        title: "Proof of Liquidity / Bank Statements (3 Months)",
+        category: "financials",
+        status: "pending",
+        assignedRole: "borrower",
+        notes: `Verify at least $${underwritingCalculations.cashRequiredToClose.toLocaleString()} cash to close`,
+      },
+      {
+        title: "Executed Purchase & Sale Agreement",
+        category: "property",
+        status: "pending",
+        assignedRole: "borrower",
+        notes: "Executed contract with earnest money receipt",
+      },
+      {
+        title: "Itemized Scope of Work & Contractor Estimate",
+        category: "property",
+        status: "pending",
+        assignedRole: "borrower",
+        notes: "Detailed line-item rehab budget",
+      },
+      {
+        title: "Preliminary Title Commitment & Clean Report",
+        category: "title_legal",
+        status: "pending",
+        assignedRole: "lender",
+        notes: "Title search to verify first lien position",
+      },
+      {
+        title: "Property Hazard / Builders-Risk Insurance Binder",
+        category: "insurance",
+        status: "pending",
+        assignedRole: "borrower",
+        notes: "Name Lender as Loss Payee",
+      },
+    ];
+
+    const newLoan = await Loan.create({
+      name: user ? user.userName : (entityDetails.authorizedSignerName || "Borrower"),
+      borrowerId: userId,
+      lenderId: lenderId || null,
+      aadhaarNumber: user ? user.aadharCardNo || "" : "",
+      mobileNumber: user ? user.mobileNo : "9999999999",
+      address: propertyDetails.address || (user ? user.address : "Commercial Property"),
+      amount: Number(amount),
+      dealName: dealName || `${propertyDetails.address || "CRE"} ${loanPurpose.toUpperCase()} Deal`,
+      purpose: `Commercial Real Estate - ${loanPurpose}`,
+      pipelineStage: "intake",
+      loanPurpose,
+      propertyDetails,
+      entityDetails,
+      borrowerExperience,
+      underwriting: underwritingCalculations,
+      riskAssessment: riskData,
+      conditionsChecklist,
+      paymentStatus: "pending",
+      borrowerAcceptanceStatus: "pending",
+    });
+
+    await AuditLog.create({
+      loanId: newLoan._id,
+      userId,
+      userName: user ? user.userName : "Borrower",
+      userRole: "borrower",
+      action: "SUBMITTED_APPLICATION",
+      module: "intake",
+      details: `Submitted new commercial loan application for $${Number(amount).toLocaleString()} (${loanPurpose})`,
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: "Commercial loan application submitted successfully.",
+      data: newLoan,
+    });
+  } catch (error) {
+    console.error("Error applying for commercial loan:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to submit commercial loan application.",
+      error: error.message,
+    });
+  }
+};
+
+// Get commercial loans for logged-in borrower
+const getBorrowerCommercialLoans = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const loans = await Loan.find({ borrowerId: userId })
+      .populate("lenderId", "userName email mobileNo companyName")
+      .sort({ createdAt: -1 });
+
+    const totalApplications = loans.length;
+    const activeVolume = loans.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+    const approvedDeals = loans.filter((l) => ["approved_funded", "closed"].includes(l.pipelineStage)).length;
+    const inReviewDeals = loans.filter((l) => ["intake", "doc_collection", "underwriting", "committee_review"].includes(l.pipelineStage)).length;
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        loans,
+        metrics: {
+          totalApplications,
+          activeVolume,
+          approvedDeals,
+          inReviewDeals,
+        },
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching borrower commercial loans:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch loans.",
+      error: error.message,
+    });
+  }
+};
 
 module.exports = {
   getLoanByAadhaar,
@@ -1667,4 +1840,6 @@ module.exports = {
   createRazorpayOrderForPayment,
   verifyRazorpayPayment,
   getInstallmentHistory,
+  applyCommercialLoan,
+  getBorrowerCommercialLoans,
 };

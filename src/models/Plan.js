@@ -31,7 +31,28 @@ const planSchema = new mongoose.Schema({
     prioritySupport: {
       type: Boolean,
       default: false
-    }
+    },
+    maxActiveDeals: {
+      type: Number,
+      default: 25,
+    },
+    aiDocumentReviewCredits: {
+      type: Number,
+      default: 100,
+    },
+    customTermSheets: {
+      type: Boolean,
+      default: true,
+    },
+    teamMembersLimit: {
+      type: Number,
+      default: 3,
+    },
+  },
+  tier: {
+    type: String,
+    enum: ["starter", "professional", "enterprise"],
+    default: "starter",
   },
   isActive: {
     type: Boolean,

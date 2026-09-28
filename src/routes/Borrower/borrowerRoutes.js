@@ -19,8 +19,9 @@ router.get("/borrowers/search", authenticateUser, searchBorrowers);
 // Get borrower by ID
 router.get("/borrowers/:id", authenticateUser, getBorrowerById);
 
-// Loan routes for borrowers
+// Loan routes for borrowers (mounted on /loans and / for backwards & direct URL compatibility)
 router.use("/loans", borrowerLoanRoutes);
+router.use("/", borrowerLoanRoutes);
 
 // Aadhaar eKYC routes for borrowers (mock — see aadhaarKycController.js)
 router.use("/ekyc/aadhaar", aadhaarKycRoutes);

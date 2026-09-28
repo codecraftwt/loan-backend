@@ -249,33 +249,14 @@ const createPlan = async (req, res) => {
 
     // Prepare plan features for comparison
     const newPlanFeatures = {
-      unlimitedLoans: true, // All plans have unlimited loans
+      unlimitedLoans: true,
       advancedAnalytics: planFeatures?.advancedAnalytics || false,
       prioritySupport: planFeatures?.prioritySupport || false,
+      maxActiveDeals: Number(planFeatures?.maxActiveDeals) || 25,
+      aiDocumentReviewCredits: Number(planFeatures?.aiDocumentReviewCredits) || 100,
+      customTermSheets: planFeatures?.customTermSheets ?? true,
+      teamMembersLimit: Number(planFeatures?.teamMembersLimit) || 3,
     };
-
-    // Check if plan with same name, price, and features already exists
-    const existingPlan = await Plan.findOne({ planName: planName.trim(), isDeleted: false });
-    if (existingPlan) {
-      const existingPrice = parseFloat(existingPlan.priceMonthly);
-      const newPrice = parseFloat(priceMonthly);
-      
-      // Compare price
-      const priceMatches = existingPrice === newPrice;
-      
-      // Compare features (normalize to handle undefined)
-      const existingFeatures = existingPlan.planFeatures || {};
-      const featuresMatch = 
-        (existingFeatures.advancedAnalytics ?? false) === newPlanFeatures.advancedAnalytics &&
-        (existingFeatures.prioritySupport ?? false) === newPlanFeatures.prioritySupport;
-
-      if (priceMatches && featuresMatch) {
-        return res.status(400).json({
-          success: false,
-          message: "Plan with all these details already exists",
-        });
-      }
-    }
 
     // Create new plan
     const newPlan = new Plan({
@@ -284,6 +265,7 @@ const createPlan = async (req, res) => {
       duration: duration,
       priceMonthly: parseFloat(priceMonthly),
       planFeatures: newPlanFeatures,
+      tier: req.body.tier || "starter",
       isActive: isActive !== undefined ? isActive : true,
     });
 
@@ -296,11 +278,8 @@ const createPlan = async (req, res) => {
       description: newPlan.description,
       duration: newPlan.duration,
       priceMonthly: newPlan.priceMonthly,
-      planFeatures: {
-        unlimitedLoans: newPlan.planFeatures.unlimitedLoans,
-        advancedAnalytics: newPlan.planFeatures.advancedAnalytics,
-        prioritySupport: newPlan.planFeatures.prioritySupport,
-      },
+      planFeatures: newPlan.planFeatures,
+      tier: newPlan.tier,
       isActive: newPlan.isActive,
       createdAt: newPlan.createdAt,
       updatedAt: newPlan.updatedAt,
@@ -394,42 +373,24 @@ const editPlan = async (req, res) => {
 
     if (isActive !== undefined) updateData.isActive = isActive;
 
+    if (req.body.tier !== undefined) updateData.tier = req.body.tier;
+
     // Update planFeatures if provided
     if (planFeatures !== undefined) {
       updateData.planFeatures = {
-        unlimitedLoans: true, // Always true for all plans
+        unlimitedLoans: true,
         advancedAnalytics: planFeatures.advancedAnalytics !== undefined 
           ? planFeatures.advancedAnalytics 
           : plan.planFeatures?.advancedAnalytics ?? false,
         prioritySupport: planFeatures.prioritySupport !== undefined 
           ? planFeatures.prioritySupport 
           : plan.planFeatures?.prioritySupport ?? false,
+        maxActiveDeals: Number(planFeatures.maxActiveDeals) || plan.planFeatures?.maxActiveDeals || 25,
+        aiDocumentReviewCredits: Number(planFeatures.aiDocumentReviewCredits) || plan.planFeatures?.aiDocumentReviewCredits || 100,
+        customTermSheets: planFeatures.customTermSheets !== undefined ? planFeatures.customTermSheets : plan.planFeatures?.customTermSheets ?? true,
+        teamMembersLimit: Number(planFeatures.teamMembersLimit) || plan.planFeatures?.teamMembersLimit || 3,
       };
       finalFeatures = updateData.planFeatures;
-    }
-
-    // Check if updated plan conflicts with existing plan (only if name, price, or features changed)
-    if (updateData.planName || updateData.priceMonthly !== undefined || updateData.planFeatures) {
-      const existingPlan = await Plan.findOne({ 
-        planName: finalPlanName,
-        isDeleted: false,
-        _id: { $ne: planId } // Exclude current plan
-      });
-      
-      if (existingPlan) {
-        const priceMatches = parseFloat(existingPlan.priceMonthly) === parseFloat(finalPrice);
-        const existingFeatures = existingPlan.planFeatures || {};
-        const featuresMatch = 
-          (existingFeatures.advancedAnalytics ?? false) === finalFeatures.advancedAnalytics &&
-          (existingFeatures.prioritySupport ?? false) === finalFeatures.prioritySupport;
-
-        if (priceMatches && featuresMatch) {
-          return res.status(400).json({
-            success: false,
-            message: "Plan with all these details already exists",
-          });
-        }
-      }
     }
 
     // Update the plan
@@ -449,11 +410,8 @@ const editPlan = async (req, res) => {
       description: updatedPlan.description,
       duration: updatedPlan.duration,
       priceMonthly: updatedPlan.priceMonthly,
-      planFeatures: {
-        unlimitedLoans: updatedPlan.planFeatures.unlimitedLoans,
-        advancedAnalytics: updatedPlan.planFeatures.advancedAnalytics,
-        prioritySupport: updatedPlan.planFeatures.prioritySupport,
-      },
+      planFeatures: updatedPlan.planFeatures,
+      tier: updatedPlan.tier,
       isActive: updatedPlan.isActive,
       createdAt: updatedPlan.createdAt,
       updatedAt: updatedPlan.updatedAt,
@@ -607,7 +565,12 @@ const getAllPlans = async (req, res) => {
         unlimitedLoans: plan.planFeatures?.unlimitedLoans ?? true,
         advancedAnalytics: plan.planFeatures?.advancedAnalytics ?? false,
         prioritySupport: plan.planFeatures?.prioritySupport ?? false,
+        maxActiveDeals: plan.planFeatures?.maxActiveDeals ?? 25,
+        aiDocumentReviewCredits: plan.planFeatures?.aiDocumentReviewCredits ?? 100,
+        customTermSheets: plan.planFeatures?.customTermSheets ?? true,
+        teamMembersLimit: plan.planFeatures?.teamMembersLimit ?? 3,
       },
+      tier: plan.tier || "starter",
       isActive: plan.isActive,
       isDeleted: plan.isDeleted,
       deletedAt: plan.deletedAt,
@@ -1205,8 +1168,8 @@ const getRecentActivities = async (req, res) => {
       });
     });
 
-    // 2. Get plans updated by admin
-    const plansUpdated = await Plan.find({ updatedAt: { $ne: null } })
+    // 2. Get plans updated by admin (exclude deleted plans)
+    const plansUpdated = await Plan.find({ isDeleted: false, updatedAt: { $ne: null } })
       .sort({ updatedAt: -1 })
       .limit(limit * 2)
       .select('planName priceMonthly duration updatedAt createdAt')
@@ -1229,7 +1192,29 @@ const getRecentActivities = async (req, res) => {
       }
     });
 
-    // 3. Get lenders who purchased subscription plans
+    // 3. Get plans deleted by admin
+    const plansDeleted = await Plan.find({ isDeleted: true })
+      .sort({ deletedAt: -1, updatedAt: -1 })
+      .limit(limit * 2)
+      .select('planName priceMonthly duration deletedAt updatedAt createdAt')
+      .lean();
+
+    plansDeleted.forEach(plan => {
+      const deleteTime = plan.deletedAt || plan.updatedAt;
+      activities.push({
+        type: 'plan_deleted',
+        shortMessage: 'Plan Deleted',
+        message: `Plan "${plan.planName}" was deleted`,
+        planId: plan._id,
+        planName: plan.planName,
+        priceMonthly: plan.priceMonthly,
+        duration: plan.duration,
+        timestamp: deleteTime,
+        relativeTime: getRelativeTime(deleteTime)
+      });
+    });
+
+    // 4. Get lenders who purchased subscription plans
     const planPurchases = await User.find({
       roleId: 1, // Only lenders
       currentPlanId: { $exists: true, $ne: null },
@@ -1270,7 +1255,7 @@ const getRecentActivities = async (req, res) => {
     
     for (const activity of activities) {
       let key;
-      if (activity.type === 'plan_updated') {
+      if (activity.type === 'plan_updated' || activity.type === 'plan_deleted') {
         key = `${activity.type}_${activity.planId}_${activity.timestamp}`;
       } else if (activity.type === 'subscription_purchased') {
         key = `${activity.type}_${activity.userId}_${activity.planId}_${activity.timestamp}`;
