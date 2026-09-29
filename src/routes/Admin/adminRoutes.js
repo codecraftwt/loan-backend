@@ -15,12 +15,13 @@ const {
   getBorrowersByLender,
   impersonateLender
 } = require("../../controllers/Admin/adminController");
+const { getBorrowerById } = require("../../controllers/Borrower/borrowerController");
 const checkLender = require("../../middlewares/checkLender");
 
 const router = express.Router();
 
 // Admin only routes - Create and Edit plans
-router.post("/plans", authenticateUser, checkAdmin, createPlan);
+router.post("/plans", authenticateUser, checkAdmin, createPlan);  
 router.put("/plans/:id", authenticateUser, checkAdmin, editPlan);
 router.patch("/plans/:id", authenticateUser, checkAdmin, editPlan);
 router.delete("/plans/:id", authenticateUser, checkAdmin, deletePlan);
@@ -46,6 +47,8 @@ router.get("/recent-activities", authenticateUser, checkAdmin, getRecentActiviti
 router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans);      // specific first
 router.get("/lenders/:lenderId/borrowers", authenticateUser, checkAdminOrLender, getBorrowersByLender);
 
-
+// Admin & Lender routes - Single Borrower Details
+router.get("/borrowers/:id/details", authenticateUser, checkAdminOrLender, getBorrowerById);
+router.get("/borrowers/:id", authenticateUser, checkAdminOrLender, getBorrowerById);
 
 module.exports = router;
