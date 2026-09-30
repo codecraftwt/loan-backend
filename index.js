@@ -16,6 +16,8 @@ const NotificationRoutes = require("./src/routes/Notifications/notificationRoute
 const RatingRoutes = require("./src/routes/ratingRoutes");
 const UnderwritingRoutes = require("./src/routes/Loans/underwritingRoutes");
 const DmsRoutes = require("./src/routes/Borrower/dmsRoutes");
+const LenderFlowRoutes = require("./src/routes/Lender/lenderFlowRoutes");
+const BorrowerFlowRoutes = require("./src/routes/Borrower/borrowerFlowRoutes");
 
 const app = express();
 
@@ -29,7 +31,9 @@ app.use(express.json());
 app.use("/api/auth", AuthRoutes);
 app.use("/api/loan", LoanRoutes);
 app.use("/api/user", UserRoutes);
-app.use("/api/borrower", BorrowerRoutes);
+app.use("/api/borrower", BorrowerFlowRoutes);
+app.use("/api/borrower/legacy", BorrowerRoutes);
+app.use("/api/lender", LenderFlowRoutes);
 app.use("/api/lender/loans", LenderLoanRoutes);
 app.use("/api/history", HistoryRoutes);
 app.use("/api/admin", AdminRoutes);

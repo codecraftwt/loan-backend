@@ -36,13 +36,15 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: true,
       unique: true,
-      // match: [/^\d{12}$/, "Please provide a valid 12-digit Aadhar number"],
     },
     mobileNo: {
       type: String,
       required: true,
       unique: true,
-      // stored in E.164 format: +911234567890
+    },
+    altMobileNo: {
+      type: String,
+      default: "",
     },
     roleId: {
       type: Number,
@@ -69,13 +71,13 @@ const userSchema = new mongoose.Schema(
     // Store multiple device tokens as an array
     deviceTokens: [
       {
-        type: String, // Each device token will be stored as a string
-        required: false, // Tokens are optional initially and will be updated later
+        type: String,
+        required: false,
       },
     ],
     isActive: {
       type: Boolean,
-      default: true
+      default: true,
     },
     // Plan purchase details
     currentPlanId: {
@@ -103,6 +105,115 @@ const userSchema = new mongoose.Schema(
       type: String,
       required: false,
     },
+
+    // ─── Streamlined Lender Profile (Rates, Services, History) ───
+    lenderProfile: {
+      minInterestRate: {
+        type: Number,
+        default: null,
+      },
+      maxInterestRate: {
+        type: Number,
+        default: null,
+      },
+      servicesOffered: {
+        type: [String],
+        default: [],
+      },
+      totalLoansFunded: {
+        type: Number,
+        default: 0,
+      },
+      totalDisbursedAmount: {
+        type: Number,
+        default: 0,
+      },
+      experienceYears: {
+        type: Number,
+        default: 0,
+      },
+      approvalRate: {
+        type: Number,
+        default: 0,
+      },
+      rating: {
+        type: Number,
+        default: 0,
+      },
+      ratingCount: {
+        type: Number,
+        default: 0,
+      },
+      bio: {
+        type: String,
+        default: "",
+      },
+      minLoanAmount: {
+        type: Number,
+        default: null,
+      },
+      maxLoanAmount: {
+        type: Number,
+        default: null,
+      },
+      turnaroundTime: {
+        type: String,
+        default: "",
+      },
+    },
+
+    // ─── Streamlined Borrower Profile (Financials, Credit, History) ───
+    borrowerProfile: {
+      businessName: {
+        type: String,
+        default: "",
+      },
+      businessType: {
+        type: String,
+        default: "Private Limited Company",
+      },
+      annualRevenue: {
+        type: Number,
+        default: 0,
+      },
+      monthlyIncome: {
+        type: Number,
+        default: 0,
+      },
+      creditScore: {
+        type: Number,
+        default: 750, // 300 to 900
+      },
+      riskGrade: {
+        type: String,
+        default: "A",
+      },
+      gstNumber: {
+        type: String,
+        default: "",
+      },
+      yearsInBusiness: {
+        type: Number,
+        default: 3,
+      },
+      totalLoansTaken: {
+        type: Number,
+        default: 0,
+      },
+      onTimeRepayments: {
+        type: Number,
+        default: 0,
+      },
+      defaultsCount: {
+        type: Number,
+        default: 0,
+      },
+      employmentType: {
+        type: String,
+        default: "Business Owner / Self-Employed",
+      },
+    },
+
     // Fraud detection fields (for borrowers)
     fraudDetection: {
       fraudScore: {
@@ -123,15 +234,17 @@ const userSchema = new mongoose.Schema(
         totalOverdueLoans: { type: Number, default: 0 },
         lastFraudCheck: { type: Date, default: Date.now },
       },
-      fraudHistory: [{
-        detectedAt: { type: Date, default: Date.now },
-        fraudScore: { type: Number },
-        riskLevel: { type: String },
-        reason: { type: String },
-        details: { type: mongoose.Schema.Types.Mixed },
-      }],
+      fraudHistory: [
+        {
+          detectedAt: { type: Date, default: Date.now },
+          fraudScore: { type: Number },
+          riskLevel: { type: String },
+          reason: { type: String },
+          details: { type: mongoose.Schema.Types.Mixed },
+        },
+      ],
     },
-    // Commercial Lending & Entity Profile (Lender & Borrower)
+
     companyName: {
       type: String,
       default: "",
@@ -144,6 +257,26 @@ const userSchema = new mongoose.Schema(
       type: String,
       default: "",
     },
+    city: {
+      type: String,
+      default: "",
+    },
+    taluka: {
+      type: String,
+      default: "",
+    },
+    district: {
+      type: String,
+      default: "",
+    },
+    state: {
+      type: String,
+      default: "",
+    },
+    pincode: {
+      type: String,
+      default: "",
+    },
     stateOfOperation: {
       type: String,
       default: "",
@@ -153,6 +286,12 @@ const userSchema = new mongoose.Schema(
       aiCreditsUsed: { type: Number, default: 0 },
       aiCreditsLimit: { type: Number, default: 50 },
     },
+    favoriteLenders: [
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+      },
+    ],
   },
   { timestamps: true }
 );

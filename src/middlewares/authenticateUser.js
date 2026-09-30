@@ -20,6 +20,7 @@ const authenticateUser = (req, res, next) => {
 
     req.user = {
       id: decoded.id,
+      _id: decoded.id,
       roleId: decoded.roleId,
       isImpersonating: decoded.isImpersonating || false,
       adminId: decoded.adminId || null,

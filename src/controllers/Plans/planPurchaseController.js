@@ -1,9 +1,10 @@
 const Plan = require("../../models/Plan");
 const User = require("../../models/User");
+const SubscriptionHistory = require("../../models/SubscriptionHistory");
 const razorpayInstance = require("../../config/razorpay.config");
 const crypto = require("crypto");
 
-// Create Razorpay order for plan purchase
+// Create Razorpay order for plan purchase / recharge
 const createPlanOrder = async (req, res) => {
   try {
     const { planId } = req.body;
@@ -28,29 +29,8 @@ const createPlanOrder = async (req, res) => {
     if (user.roleId !== 1) {
       return res.status(403).json({
         success: false,
-        message: "Only lenders can purchase plans",
+        message: "Only lenders can purchase subscription plans",
       });
-    }
-
-    // Check if user already has an active plan
-    if (user.currentPlanId && user.planExpiryDate) {
-      const now = new Date();
-      const expiryDate = new Date(user.planExpiryDate);
-      
-      if (expiryDate > now) {
-        // User has an active plan that hasn't expired yet
-        const remainingDays = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
-        
-        return res.status(400).json({
-          success: false,
-          message: "You already have an active plan. Please wait until your current plan expires to purchase a new one.",
-          data: {
-            currentPlanExpiryDate: user.planExpiryDate,
-            remainingDays: remainingDays,
-            canPurchaseNewPlan: false,
-          },
-        });
-      }
     }
 
     // Get plan details
@@ -62,12 +42,16 @@ const createPlanOrder = async (req, res) => {
       });
     }
 
-    if (!plan.isActive) {
+    if (!plan.isActive || plan.isDeleted) {
       return res.status(400).json({
         success: false,
-        message: "This plan is not active",
+        message: "This plan is not currently active",
       });
     }
+
+    // Calculate pack price in paise
+    const packPrice = plan.price || plan.priceMonthly || 1999;
+    const amountInPaise = Math.round(packPrice * 100);
 
     // Create Razorpay order
     const timestamp = Date.now();
@@ -76,19 +60,26 @@ const createPlanOrder = async (req, res) => {
     const receiptId = `plan_${shortPlanId}_${shortUserId}_${timestamp.toString().slice(-6)}`;
 
     const options = {
-      amount: plan.priceMonthly * 100, // Convert to paise
+      amount: amountInPaise,
       currency: "INR",
       receipt: receiptId,
       notes: {
         userId: userId.toString(),
         planId: planId.toString(),
         planName: plan.planName,
+        duration: plan.duration,
+        durationDays: String(plan.durationDays || 30),
         userEmail: user.email,
         userName: user.userName,
       },
     };
 
     const order = await razorpayInstance.orders.create(options);
+
+    // Check if lender already has an active plan (for renewal/extension notice)
+    const now = new Date();
+    const hasActivePlan = user.currentPlanId && user.planExpiryDate && new Date(user.planExpiryDate) > now;
+    const currentExpiry = hasActivePlan ? user.planExpiryDate : null;
 
     return res.status(200).json({
       success: true,
@@ -97,12 +88,19 @@ const createPlanOrder = async (req, res) => {
         orderId: order.id,
         amount: order.amount,
         currency: order.currency,
+        isExtension: hasActivePlan,
+        currentExpiryDate: currentExpiry,
         plan: {
           id: plan._id,
           planName: plan.planName,
           description: plan.description,
           duration: plan.duration,
-          priceMonthly: plan.priceMonthly,
+          durationDays: plan.durationDays || 30,
+          price: packPrice,
+          priceMonthly: plan.priceMonthly || Math.round(packPrice / ((plan.durationDays || 30) / 30)),
+          tag: plan.tag,
+          allServicesIncluded: plan.allServicesIncluded ?? true,
+          servicesList: plan.servicesList,
           planFeatures: plan.planFeatures,
         },
       },
@@ -117,7 +115,7 @@ const createPlanOrder = async (req, res) => {
   }
 };
 
-// Verify payment and activate plan
+// Verify payment and activate / extend plan
 const verifyPaymentAndActivatePlan = async (req, res) => {
   try {
     const {
@@ -147,27 +145,11 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
 
     const isAuthentic = expectedSignature === razorpay_signature;
 
-    // Enhanced logging for debugging
     if (!isAuthentic) {
       console.error("Payment signature verification failed:");
-      console.error("Order ID:", razorpay_order_id);
-      console.error("Payment ID:", razorpay_payment_id);
-      console.error("Signature String:", signatureString);
-      console.error("Expected Signature from plan purchase:", expectedSignature);
-      console.error("Received Signature:", razorpay_signature);
-      console.error("Secret Key Present:", !!razorpaySecret);
-      console.error("Secret Key Length:", razorpaySecret ? razorpaySecret.length : 0);
-      
       return res.status(400).json({
         success: false,
         message: "Payment verification failed. Invalid signature.",
-        error: "Signature mismatch",
-        debug: process.env.NODE_ENV === 'development' ? {
-          expectedSignature,
-          receivedSignature: razorpay_signature,
-          signatureString,
-          secretKeyPresent: !!razorpaySecret,
-        } : undefined,
       });
     }
 
@@ -192,92 +174,99 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
     if (user.roleId !== 1) {
       return res.status(403).json({
         success: false,
-        message: "Only lenders can purchase plans",
+        message: "Only lenders can activate subscription plans",
       });
     }
 
-    // Check if user already has an active plan (double-check before activation)
-    if (user.currentPlanId && user.planExpiryDate) {
-      const now = new Date();
-      const expiryDate = new Date(user.planExpiryDate);
-      
-      if (expiryDate > now) {
-        // User has an active plan that hasn't expired yet
-        const remainingDays = Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24));
-        
-        return res.status(400).json({
-          success: false,
-          message: "You already have an active plan. Please wait until your current plan expires to purchase a new one.",
-          data: {
-            currentPlanExpiryDate: user.planExpiryDate,
-            remainingDays: remainingDays,
-            canPurchaseNewPlan: false,
-          },
-        });
-      }
+    // Calculate expiry date: If user has an active plan, extend from existing expiry date!
+    const now = new Date();
+    let baseDate = now;
+    let isExtended = false;
+
+    if (user.planExpiryDate && new Date(user.planExpiryDate) > now) {
+      baseDate = new Date(user.planExpiryDate);
+      isExtended = true;
     }
 
-    // Calculate expiry date based on plan duration
-    const purchaseDate = new Date();
-    let expiryDate = new Date(purchaseDate);
-
-    switch (plan.duration) {
-      case "1 month":
-        expiryDate.setMonth(expiryDate.getMonth() + 1);
-        break;
-      case "2 months":
-        expiryDate.setMonth(expiryDate.getMonth() + 2);
-        break;
-      case "3 months":
-        expiryDate.setMonth(expiryDate.getMonth() + 3);
-        break;
-      case "6 months":
-        expiryDate.setMonth(expiryDate.getMonth() + 6);
-        break;
-      case "1 year":
-        expiryDate.setFullYear(expiryDate.getFullYear() + 1);
-        break;
-      default:
-        expiryDate.setMonth(expiryDate.getMonth() + 1);
+    // Determine days to add
+    let daysToAdd = plan.durationDays;
+    if (!daysToAdd) {
+      if (plan.duration === "1 month") daysToAdd = 30;
+      else if (plan.duration === "2 months") daysToAdd = 60;
+      else if (plan.duration === "3 months") daysToAdd = 90;
+      else if (plan.duration === "6 months") daysToAdd = 180;
+      else if (plan.duration === "1 year") daysToAdd = 365;
+      else daysToAdd = 30;
     }
+
+    const newExpiryDate = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
 
     // Update user with plan details
-    user.currentPlanId = planId;
-    user.planPurchaseDate = purchaseDate;
-    user.planExpiryDate = expiryDate;
+    user.currentPlanId = plan._id;
+    user.planPurchaseDate = now;
+    user.planExpiryDate = newExpiryDate;
     user.razorpayOrderId = razorpay_order_id;
     user.razorpayPaymentId = razorpay_payment_id;
     user.razorpaySignature = razorpay_signature;
 
     await user.save();
 
-    // Calculate remaining days
-    const now = new Date();
-    const remainingDays = Math.max(0, Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24)));
+    // Log in SubscriptionHistory
+    try {
+      await SubscriptionHistory.create({
+        userId: user._id,
+        planId: plan._id,
+        planName: plan.planName,
+        duration: plan.duration,
+        durationDays: daysToAdd,
+        price: plan.price || plan.priceMonthly || 1999,
+        priceMonthly: plan.priceMonthly,
+        tag: plan.tag || "",
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        razorpaySignature: razorpay_signature,
+        purchaseDate: now,
+        startDate: baseDate,
+        expiryDate: newExpiryDate,
+        paymentStatus: "completed",
+        isExtension: isExtended,
+      });
+    } catch (historyErr) {
+      console.error("Error creating subscription history record:", historyErr);
+    }
+
+    const remainingDays = Math.max(0, Math.ceil((newExpiryDate - now) / (1000 * 60 * 60 * 24)));
 
     return res.status(200).json({
       success: true,
-      message: "Plan activated successfully",
+      message: isExtended
+        ? `Recharge successful! Your subscription has been extended by ${daysToAdd} days.`
+        : `Subscription activated successfully for ${daysToAdd} days.`,
       data: {
         plan: {
           id: plan._id,
           planName: plan.planName,
           description: plan.description,
           duration: plan.duration,
+          durationDays: daysToAdd,
+          price: plan.price || plan.priceMonthly,
           priceMonthly: plan.priceMonthly,
-          planFeatures: plan.planFeatures,
+          tag: plan.tag,
+          allServicesIncluded: plan.allServicesIncluded ?? true,
+          servicesList: plan.servicesList,
         },
-        purchaseDate: purchaseDate,
-        expiryDate: expiryDate,
-        remainingDays: remainingDays,
+        purchaseDate: now,
+        expiryDate: newExpiryDate,
+        remainingDays,
         isActive: true,
+        isExtended,
       },
     });
   } catch (error) {
     console.error("Error verifying payment and activating plan:", error);
     return res.status(500).json({
       success: false,
-      message: "Server error. Please try again later.",
+      message: "Server error while activating plan",
       error: error.message,
     });
   }
@@ -299,7 +288,6 @@ const getActivePlan = async (req, res) => {
       });
     }
 
-    // Check if user has an active plan
     const now = new Date();
     const hasActivePlan = user.currentPlanId && 
                           user.planExpiryDate && 
@@ -320,26 +308,32 @@ const getActivePlan = async (req, res) => {
       });
     }
 
-    // Calculate remaining days
     const expiryDate = new Date(user.planExpiryDate);
     const remainingDays = Math.max(0, Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24)));
+
+    const p = user.currentPlanId;
 
     return res.status(200).json({
       success: true,
       message: "Active plan retrieved successfully",
       data: {
         hasActivePlan: true,
-        plan: user.currentPlanId ? {
-          id: user.currentPlanId._id,
-          planName: user.currentPlanId.planName,
-          description: user.currentPlanId.description,
-          duration: user.currentPlanId.duration,
-          priceMonthly: user.currentPlanId.priceMonthly,
-          planFeatures: user.currentPlanId.planFeatures,
+        plan: p ? {
+          id: p._id,
+          planName: p.planName,
+          description: p.description,
+          duration: p.duration,
+          durationDays: p.durationDays || (p.duration === "1 year" ? 365 : p.duration === "6 months" ? 180 : p.duration === "3 months" ? 90 : 30),
+          price: p.price || p.priceMonthly || 1999,
+          priceMonthly: p.priceMonthly || p.price || 1999,
+          tag: p.tag,
+          allServicesIncluded: p.allServicesIncluded ?? true,
+          servicesList: p.servicesList,
+          planFeatures: p.planFeatures,
         } : null,
         purchaseDate: user.planPurchaseDate,
         expiryDate: user.planExpiryDate,
-        remainingDays: remainingDays,
+        remainingDays,
         isActive: true,
       },
     });
@@ -347,7 +341,32 @@ const getActivePlan = async (req, res) => {
     console.error("Error fetching active plan:", error);
     return res.status(500).json({
       success: false,
-      message: "Server error. Please try again later.",
+      message: "Server error while fetching active plan",
+      error: error.message,
+    });
+  }
+};
+
+// Get user's subscription / recharge history
+const getSubscriptionHistory = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const history = await SubscriptionHistory.find({ userId })
+      .populate("planId", "planName duration durationDays price tag")
+      .sort({ purchaseDate: -1, createdAt: -1 });
+
+    return res.status(200).json({
+      success: true,
+      message: "Subscription history fetched successfully",
+      count: history.length,
+      data: history,
+    });
+  } catch (error) {
+    console.error("Error fetching subscription history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching subscription history",
       error: error.message,
     });
   }
@@ -357,5 +376,5 @@ module.exports = {
   createPlanOrder,
   verifyPaymentAndActivatePlan,
   getActivePlan,
+  getSubscriptionHistory,
 };
-

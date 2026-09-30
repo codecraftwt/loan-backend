@@ -218,6 +218,69 @@ const impersonateLender = async (req, res) => {
 };
 
 
+// Helper: Standard 4 Duration-based Recharge Packs
+const STANDARD_DURATION_PLANS = [
+  {
+    planName: "1 Month Plan",
+    description: "Full unrestricted platform access for 30 days. All underwriting and borrower services included.",
+    duration: "1 month",
+    durationDays: 30,
+    price: 1999,
+    priceMonthly: 1999,
+    tag: "Standard Monthly",
+    tier: "starter",
+    allServicesIncluded: true,
+    isActive: true,
+  },
+  {
+    planName: "3 Months Plan",
+    description: "90 days uninterrupted deal flow with quarterly savings. All platform services included.",
+    duration: "3 months",
+    durationDays: 90,
+    price: 4999,
+    priceMonthly: 1666,
+    tag: "Quarterly Saver • Save 16%",
+    tier: "quarterly",
+    allServicesIncluded: true,
+    isActive: true,
+  },
+  {
+    planName: "6 Months Plan",
+    description: "180 days high-velocity deal access with half-yearly savings. All premium underwriting tools included.",
+    duration: "6 months",
+    durationDays: 180,
+    price: 8999,
+    priceMonthly: 1499,
+    tag: "Most Popular • Save 25%",
+    tier: "half-yearly",
+    allServicesIncluded: true,
+    isActive: true,
+  },
+  {
+    planName: "1 Year Plan",
+    description: "365 days complete peace of mind with maximum annual savings. Full unrestricted capabilities.",
+    duration: "1 year",
+    durationDays: 365,
+    price: 14999,
+    priceMonthly: 1249,
+    tag: "Best Value • Save 37%",
+    tier: "annual",
+    allServicesIncluded: true,
+    isActive: true,
+  },
+];
+
+const seedInitialDurationPlans = async () => {
+  try {
+    const count = await Plan.countDocuments({ isDeleted: false });
+    if (count === 0) {
+      await Plan.insertMany(STANDARD_DURATION_PLANS);
+    }
+  } catch (err) {
+    console.error("Error auto-seeding initial duration plans:", err);
+  }
+};
+
 // Create a new plan (Admin only)
 const createPlan = async (req, res) => {
   try {
@@ -225,89 +288,76 @@ const createPlan = async (req, res) => {
       planName,
       description,
       duration,
+      durationDays,
+      price,
       priceMonthly,
+      tag,
+      allServicesIncluded,
+      servicesList,
       planFeatures,
+      tier,
       isActive,
     } = req.body;
 
     // Validate required fields
-    if (!planName || !priceMonthly || !duration) {
+    if (!planName || (!price && !priceMonthly) || !duration) {
       return res.status(400).json({
         success: false,
         message: "Plan name, duration, and price are required fields",
       });
     }
 
-    // Validate duration
-    const validDurations = ["1 month", "2 months", "3 months", "6 months", "1 year"];
-    if (!validDurations.includes(duration)) {
-      return res.status(400).json({
-        success: false,
-        message: `Duration must be one of: ${validDurations.join(", ")}`,
-      });
+    // Determine durationDays
+    let days = Number(durationDays);
+    if (!days || isNaN(days)) {
+      if (duration === "1 month") days = 30;
+      else if (duration === "2 months") days = 60;
+      else if (duration === "3 months") days = 90;
+      else if (duration === "6 months") days = 180;
+      else if (duration === "1 year") days = 365;
+      else days = 30;
     }
 
-    // Prepare plan features for comparison
-    const newPlanFeatures = {
-      unlimitedLoans: true,
-      advancedAnalytics: planFeatures?.advancedAnalytics || false,
-      prioritySupport: planFeatures?.prioritySupport || false,
-      maxActiveDeals: Number(planFeatures?.maxActiveDeals) || 25,
-      aiDocumentReviewCredits: Number(planFeatures?.aiDocumentReviewCredits) || 100,
-      customTermSheets: planFeatures?.customTermSheets ?? true,
-      teamMembersLimit: Number(planFeatures?.teamMembersLimit) || 3,
-    };
+    // Determine totalPrice and monthlyPrice
+    const totalPrice = price ? Number(price) : Number(priceMonthly) * (days / 30);
+    const monthlyRate = priceMonthly ? Number(priceMonthly) : Math.round(totalPrice / (days / 30));
 
     // Create new plan
     const newPlan = new Plan({
       planName: planName.trim(),
       description: description || "",
-      duration: duration,
-      priceMonthly: parseFloat(priceMonthly),
-      planFeatures: newPlanFeatures,
-      tier: req.body.tier || "starter",
+      duration,
+      durationDays: days,
+      price: totalPrice,
+      priceMonthly: monthlyRate,
+      tag: tag || "",
+      allServicesIncluded: allServicesIncluded !== undefined ? allServicesIncluded : true,
+      servicesList: Array.isArray(servicesList) && servicesList.length > 0 ? servicesList : undefined,
+      planFeatures: {
+        unlimitedLoans: true,
+        advancedAnalytics: true,
+        prioritySupport: true,
+        maxActiveDeals: Number(planFeatures?.maxActiveDeals) || 100,
+        aiDocumentReviewCredits: Number(planFeatures?.aiDocumentReviewCredits) || 500,
+        customTermSheets: planFeatures?.customTermSheets ?? true,
+        teamMembersLimit: Number(planFeatures?.teamMembersLimit) || 10,
+      },
+      tier: tier || "starter",
       isActive: isActive !== undefined ? isActive : true,
     });
 
     await newPlan.save();
 
-    // Format response to match user's requested structure
-    const responseData = {
-      _id: newPlan._id,
-      planName: newPlan.planName,
-      description: newPlan.description,
-      duration: newPlan.duration,
-      priceMonthly: newPlan.priceMonthly,
-      planFeatures: newPlan.planFeatures,
-      tier: newPlan.tier,
-      isActive: newPlan.isActive,
-      createdAt: newPlan.createdAt,
-      updatedAt: newPlan.updatedAt,
-    };
-
     return res.status(201).json({
       success: true,
-      message: "Plan created successfully",
-      data: responseData,
+      message: "Recharge plan created successfully",
+      data: newPlan,
     });
   } catch (error) {
     console.error("Error creating plan:", error);
-
-    // Handle validation errors
-    if (error.name === "ValidationError") {
-      const errorMessages = Object.values(error.errors).map(
-        (err) => err.message
-      );
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errorMessages,
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: "Server error. Please try again later.",
+      message: "Server error while creating plan",
       error: error.message,
     });
   }
@@ -321,12 +371,17 @@ const editPlan = async (req, res) => {
       planName,
       description,
       duration,
+      durationDays,
+      price,
       priceMonthly,
+      tag,
+      allServicesIncluded,
+      servicesList,
       planFeatures,
+      tier,
       isActive,
     } = req.body;
 
-    // Find the plan
     const plan = await Plan.findById(planId);
     if (!plan) {
       return res.status(404).json({
@@ -335,111 +390,63 @@ const editPlan = async (req, res) => {
       });
     }
 
-    // Prepare update data
     const updateData = {};
 
-    // Prepare final values for duplicate check
-    let finalPlanName = plan.planName;
-    let finalPrice = plan.priceMonthly;
-    let finalFeatures = {
-      unlimitedLoans: true,
-      advancedAnalytics: plan.planFeatures?.advancedAnalytics ?? false,
-      prioritySupport: plan.planFeatures?.prioritySupport ?? false,
-    };
-
-    if (planName !== undefined) {
-      updateData.planName = planName.trim();
-      finalPlanName = planName.trim();
-    }
-
+    if (planName !== undefined) updateData.planName = planName.trim();
     if (description !== undefined) updateData.description = description;
-    
-    if (duration !== undefined) {
-      // Validate duration
-      const validDurations = ["1 month", "2 months", "3 months", "6 months", "1 year"];
-      if (!validDurations.includes(duration)) {
-        return res.status(400).json({
-          success: false,
-          message: `Duration must be one of: ${validDurations.join(", ")}`,
-        });
-      }
-      updateData.duration = duration;
-    }
-    
-    if (priceMonthly !== undefined) {
-      updateData.priceMonthly = parseFloat(priceMonthly);
-      finalPrice = parseFloat(priceMonthly);
+    if (duration !== undefined) updateData.duration = duration;
+
+    if (durationDays !== undefined) {
+      updateData.durationDays = Number(durationDays);
+    } else if (duration !== undefined) {
+      if (duration === "1 month") updateData.durationDays = 30;
+      else if (duration === "2 months") updateData.durationDays = 60;
+      else if (duration === "3 months") updateData.durationDays = 90;
+      else if (duration === "6 months") updateData.durationDays = 180;
+      else if (duration === "1 year") updateData.durationDays = 365;
     }
 
+    const effectiveDays = updateData.durationDays || plan.durationDays || 30;
+
+    if (price !== undefined) {
+      updateData.price = Number(price);
+      if (priceMonthly === undefined) {
+        updateData.priceMonthly = Math.round(Number(price) / (effectiveDays / 30));
+      }
+    }
+
+    if (priceMonthly !== undefined) {
+      updateData.priceMonthly = Number(priceMonthly);
+      if (price === undefined) {
+        updateData.price = Math.round(Number(priceMonthly) * (effectiveDays / 30));
+      }
+    }
+
+    if (tag !== undefined) updateData.tag = tag;
+    if (allServicesIncluded !== undefined) updateData.allServicesIncluded = allServicesIncluded;
+    if (servicesList !== undefined) updateData.servicesList = servicesList;
+    if (tier !== undefined) updateData.tier = tier;
     if (isActive !== undefined) updateData.isActive = isActive;
 
-    if (req.body.tier !== undefined) updateData.tier = req.body.tier;
-
-    // Update planFeatures if provided
     if (planFeatures !== undefined) {
       updateData.planFeatures = {
-        unlimitedLoans: true,
-        advancedAnalytics: planFeatures.advancedAnalytics !== undefined 
-          ? planFeatures.advancedAnalytics 
-          : plan.planFeatures?.advancedAnalytics ?? false,
-        prioritySupport: planFeatures.prioritySupport !== undefined 
-          ? planFeatures.prioritySupport 
-          : plan.planFeatures?.prioritySupport ?? false,
-        maxActiveDeals: Number(planFeatures.maxActiveDeals) || plan.planFeatures?.maxActiveDeals || 25,
-        aiDocumentReviewCredits: Number(planFeatures.aiDocumentReviewCredits) || plan.planFeatures?.aiDocumentReviewCredits || 100,
-        customTermSheets: planFeatures.customTermSheets !== undefined ? planFeatures.customTermSheets : plan.planFeatures?.customTermSheets ?? true,
-        teamMembersLimit: Number(planFeatures.teamMembersLimit) || plan.planFeatures?.teamMembersLimit || 3,
+        ...plan.planFeatures,
+        ...planFeatures,
       };
-      finalFeatures = updateData.planFeatures;
     }
 
-    // Update the plan
-    const updatedPlan = await Plan.findByIdAndUpdate(
-      planId,
-      updateData,
-      {
-        new: true,
-        runValidators: true,
-      }
-    );
-
-    // Format response to match user's requested structure
-    const responseData = {
-      _id: updatedPlan._id,
-      planName: updatedPlan.planName,
-      description: updatedPlan.description,
-      duration: updatedPlan.duration,
-      priceMonthly: updatedPlan.priceMonthly,
-      planFeatures: updatedPlan.planFeatures,
-      tier: updatedPlan.tier,
-      isActive: updatedPlan.isActive,
-      createdAt: updatedPlan.createdAt,
-      updatedAt: updatedPlan.updatedAt,
-    };
+    const updatedPlan = await Plan.findByIdAndUpdate(planId, updateData, { new: true, runValidators: true });
 
     return res.status(200).json({
       success: true,
       message: "Plan updated successfully",
-      data: responseData,
+      data: updatedPlan,
     });
   } catch (error) {
     console.error("Error updating plan:", error);
-
-    // Handle validation errors
-    if (error.name === "ValidationError") {
-      const errorMessages = Object.values(error.errors).map(
-        (err) => err.message
-      );
-      return res.status(400).json({
-        success: false,
-        message: "Validation error",
-        errors: errorMessages,
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: "Server error. Please try again later.",
+      message: "Server error while updating plan",
       error: error.message,
     });
   }
@@ -450,7 +457,6 @@ const deletePlan = async (req, res) => {
   try {
     const planId = req.params.id;
 
-    // Find the plan
     const plan = await Plan.findById(planId);
     if (!plan) {
       return res.status(404).json({
@@ -459,7 +465,6 @@ const deletePlan = async (req, res) => {
       });
     }
 
-    // Check if plan is already deleted
     if (plan.isDeleted) {
       return res.status(400).json({
         success: false,
@@ -467,80 +472,51 @@ const deletePlan = async (req, res) => {
       });
     }
 
-    // Check if any active lenders are using this plan
+    // Check if active lenders use it
     const activeLendersWithPlan = await User.findOne({
-      roleId: 1, // Lenders
+      roleId: 1,
       currentPlanId: planId,
-      planExpiryDate: { $gt: new Date() } // Active plans only
+      planExpiryDate: { $gt: new Date() }
     });
 
     if (activeLendersWithPlan) {
       return res.status(400).json({
         success: false,
-        message: "Cannot delete plan because it is currently being used by active lenders",
+        message: "Cannot delete plan because active lenders are currently subscribed to it.",
       });
     }
 
-    // Soft delete the plan
     plan.isDeleted = true;
-    plan.isActive = false; // Also set isActive to false for consistency
+    plan.isActive = false;
     plan.deletedAt = new Date();
     await plan.save();
 
-    // Return success response with the deleted plan info
-    const responseData = {
-      _id: plan._id,
-      planName: plan.planName,
-      description: plan.description,
-      duration: plan.duration,
-      priceMonthly: plan.priceMonthly,
-      planFeatures: {
-        unlimitedLoans: plan.planFeatures?.unlimitedLoans ?? true,
-        advancedAnalytics: plan.planFeatures?.advancedAnalytics ?? false,
-        prioritySupport: plan.planFeatures?.prioritySupport ?? false,
-      },
-      isActive: plan.isActive,
-      isDeleted: plan.isDeleted,
-      deletedAt: plan.deletedAt,
-    };
-
     return res.status(200).json({
       success: true,
-      message: "Plan deleted successfully (soft delete)",
-      data: responseData,
+      message: "Plan deleted successfully",
+      data: plan,
     });
-
   } catch (error) {
     console.error("Error deleting plan:", error);
-
-    // Handle invalid ObjectId
-    if (error.name === "CastError") {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid plan ID",
-      });
-    }
-
     return res.status(500).json({
       success: false,
-      message: "Server error. Please try again later.",
+      message: "Server error while deleting plan",
       error: error.message,
     });
   }
 };
 
-// Get all plans (Admin only - includes inactive but excludes soft-deleted)
+// Get all plans (Admin only)
 const getAllPlans = async (req, res) => {
   try {
-    const { isActive, duration, sortBy = "createdAt", sortOrder = "desc", includeDeleted } = req.query;
+    await seedInitialDurationPlans();
 
-    // Build query - exclude soft-deleted by default unless includeDeleted is true
+    const { isActive, duration, sortBy = "durationDays", sortOrder = "asc", includeDeleted } = req.query;
+
     const query = { isDeleted: false };
-    
     if (includeDeleted === "true") {
-      delete query.isDeleted; // Show all including deleted
+      delete query.isDeleted;
     }
-    
     if (isActive !== undefined) {
       query.isActive = isActive === "true";
     }
@@ -548,34 +524,17 @@ const getAllPlans = async (req, res) => {
       query.duration = duration;
     }
 
-    // Build sort object
     const sort = {};
-    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
+    sort[sortBy] = sortOrder === "desc" ? -1 : 1;
 
     const plans = await Plan.find(query).sort(sort).lean();
 
-    // Format response data
-    const formattedPlans = plans.map((plan) => ({
-      _id: plan._id,
-      planName: plan.planName,
-      description: plan.description,
-      duration: plan.duration,
-      priceMonthly: plan.priceMonthly,
-      planFeatures: {
-        unlimitedLoans: plan.planFeatures?.unlimitedLoans ?? true,
-        advancedAnalytics: plan.planFeatures?.advancedAnalytics ?? false,
-        prioritySupport: plan.planFeatures?.prioritySupport ?? false,
-        maxActiveDeals: plan.planFeatures?.maxActiveDeals ?? 25,
-        aiDocumentReviewCredits: plan.planFeatures?.aiDocumentReviewCredits ?? 100,
-        customTermSheets: plan.planFeatures?.customTermSheets ?? true,
-        teamMembersLimit: plan.planFeatures?.teamMembersLimit ?? 3,
-      },
-      tier: plan.tier || "starter",
-      isActive: plan.isActive,
-      isDeleted: plan.isDeleted,
-      deletedAt: plan.deletedAt,
-      createdAt: plan.createdAt,
-      updatedAt: plan.updatedAt,
+    const formattedPlans = plans.map((p) => ({
+      ...p,
+      price: p.price || p.priceMonthly || 1999,
+      priceMonthly: p.priceMonthly || p.price || 1999,
+      durationDays: p.durationDays || (p.duration === "1 year" ? 365 : p.duration === "6 months" ? 180 : p.duration === "3 months" ? 90 : 30),
+      allServicesIncluded: p.allServicesIncluded ?? true,
     }));
 
     return res.status(200).json({
@@ -588,48 +547,38 @@ const getAllPlans = async (req, res) => {
     console.error("Error fetching plans:", error);
     return res.status(500).json({
       success: false,
-      message: "Server error. Please try again later.",
+      message: "Server error while fetching plans",
       error: error.message,
     });
   }
 };
 
-// Get all active plans (Public - for lenders to view available plans)
+// Get all active plans (for Lenders & Public)
 const getActivePlans = async (req, res) => {
   try {
-    const { duration, sortBy = "priceMonthly", sortOrder = "asc" } = req.query;
+    await seedInitialDurationPlans();
 
-    // Build query - only active and not deleted plans
+    const { duration, sortBy = "durationDays", sortOrder = "asc" } = req.query;
+
     const query = { 
       isActive: true,
       isDeleted: false 
     };
-    
     if (duration) {
       query.duration = duration;
     }
 
-    // Build sort object
     const sort = {};
-    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
+    sort[sortBy] = sortOrder === "desc" ? -1 : 1;
 
     const plans = await Plan.find(query).sort(sort).lean();
 
-    // Format response data
-    const formattedPlans = plans.map((plan) => ({
-      _id: plan._id,
-      planName: plan.planName,
-      description: plan.description,
-      duration: plan.duration,
-      priceMonthly: plan.priceMonthly,
-      planFeatures: {
-        unlimitedLoans: plan.planFeatures?.unlimitedLoans ?? true,
-        advancedAnalytics: plan.planFeatures?.advancedAnalytics ?? false,
-        prioritySupport: plan.planFeatures?.prioritySupport ?? false,
-      },
-      isActive: plan.isActive,
-      createdAt: plan.createdAt,
-      updatedAt: plan.updatedAt,
+    const formattedPlans = plans.map((p) => ({
+      ...p,
+      price: p.price || p.priceMonthly || 1999,
+      priceMonthly: p.priceMonthly || p.price || 1999,
+      durationDays: p.durationDays || (p.duration === "1 year" ? 365 : p.duration === "6 months" ? 180 : p.duration === "3 months" ? 90 : 30),
+      allServicesIncluded: p.allServicesIncluded ?? true,
     }));
 
     return res.status(200).json({
@@ -725,23 +674,23 @@ const getLendersWithPlans = async (req, res) => {
       sortOrder = "desc" 
     } = req.query;
 
-    // Build query - only lenders (roleId: 1) who have purchased a plan
+    // Build query - all lenders (roleId: 1)
     const query = {
       roleId: 1,
-      currentPlanId: { $exists: true, $ne: null }, // Must have a plan purchased
     };
 
     const now = new Date();
     
-    // Add plan status filter (active/expired) using date comparison
+    // Add plan status filter (active/expired)
     if (planStatus && planStatus !== "all") {
       if (planStatus === "active") {
-        // Plan is active if expiry date is in the future
+        query.currentPlanId = { $exists: true, $ne: null };
         query.planExpiryDate = { $gt: now };
       } else if (planStatus === "expired") {
-        // Plan is expired if expiry date is in the past or null
         query.$or = [
-          { planExpiryDate: { $lt: now } },
+          { currentPlanId: null },
+          { currentPlanId: { $exists: false } },
+          { planExpiryDate: { $lte: now } },
           { planExpiryDate: null },
         ];
       }
@@ -759,9 +708,7 @@ const getLendersWithPlans = async (req, res) => {
         ],
       };
       
-      // Handle $or conflict if planStatus is "expired" (which already uses $or)
       if (query.$or && planStatus === "expired") {
-        // Use $and to combine expired condition with search condition
         const expiredCondition = { $or: query.$or };
         delete query.$or;
         query.$and = [
@@ -769,7 +716,6 @@ const getLendersWithPlans = async (req, res) => {
           searchConditions,
         ];
       } else {
-        // No conflict, use $or for search
         query.$or = searchConditions.$or;
       }
     }
@@ -784,7 +730,7 @@ const getLendersWithPlans = async (req, res) => {
       populate: [
         {
           path: "currentPlanId",
-          select: "planName description duration priceMonthly planFeatures isActive",
+          select: "planName description duration durationDays price priceMonthly planFeatures isActive",
         },
       ],
       select: "-password -deviceTokens -fraudDetection",
@@ -799,13 +745,15 @@ const getLendersWithPlans = async (req, res) => {
       options
     );
 
-    // Format response data with plan status and additional details
+    // Format response data with plan status and accurate details
     const formattedLenders = lenders.map((lender) => {
       const expiryDate = lender.planExpiryDate ? new Date(lender.planExpiryDate) : null;
-      const isPlanActive = expiryDate && expiryDate > now;
-      const remainingDays = expiryDate && expiryDate > now
+      const hasPlan = Boolean(lender.currentPlanId);
+      const isPlanActive = Boolean(hasPlan && expiryDate && expiryDate > now);
+      const remainingDays = isPlanActive
         ? Math.max(0, Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24)))
         : 0;
+      const planName = lender.currentPlanId?.planName || null;
 
       return {
         lender: {
@@ -827,38 +775,27 @@ const getLendersWithPlans = async (req, res) => {
           planName: lender.currentPlanId.planName,
           description: lender.currentPlanId.description,
           duration: lender.currentPlanId.duration,
+          durationDays: lender.currentPlanId.durationDays,
           priceMonthly: lender.currentPlanId.priceMonthly,
-          planFeatures: {
-            unlimitedLoans: lender.currentPlanId.planFeatures?.unlimitedLoans ?? true,
-            advancedAnalytics: lender.currentPlanId.planFeatures?.advancedAnalytics ?? false,
-            prioritySupport: lender.currentPlanId.planFeatures?.prioritySupport ?? false,
-          },
+          planFeatures: lender.currentPlanId.planFeatures,
           isActive: lender.currentPlanId.isActive,
         } : null,
         planPurchaseDetails: {
+          planName: planName,
           planPurchaseDate: lender.planPurchaseDate,
           planExpiryDate: lender.planExpiryDate,
           razorpayOrderId: lender.razorpayOrderId,
           razorpayPaymentId: lender.razorpayPaymentId,
           isPlanActive: isPlanActive,
           remainingDays: remainingDays,
-          planStatus: isPlanActive ? "active" : "expired",
+          planStatus: isPlanActive ? "active" : hasPlan ? "expired" : "no_plan",
         },
       };
     });
 
-    if (!formattedLenders.length) {
-      return res.status(404).json({
-        success: false,
-        message: "No lenders with plans found",
-        data: [],
-        pagination: pagination,
-      });
-    }
-
     return res.status(200).json({
       success: true,
-      message: "Lenders with plans fetched successfully",
+      message: "Lenders directory fetched successfully",
       count: formattedLenders.length,
       data: formattedLenders,
       pagination: pagination,
@@ -1297,4 +1234,5 @@ module.exports = {
   deletePlan,
   getBorrowersByLender,
   impersonateLender,
+  seedInitialDurationPlans,
 };

@@ -1,44 +1,77 @@
 const mongoose = require('mongoose');
 
+const DEFAULT_SERVICES = [
+  "Unlimited Borrower Applications Access",
+  "Direct Borrower Phone, Email & KYC Access",
+  "AI Document Review & Risk Grade Analysis",
+  "Custom Term Sheets & Deal Structuring",
+  "Multi-Deal Pipeline & Active Workspace",
+  "Priority Technical & Underwriting Support",
+];
+
 const planSchema = new mongoose.Schema({
   planName: {
     type: String,
-    required: true
+    required: true,
+    trim: true,
   },
   description: {
     type: String,
-    default: ""
+    default: "",
   },
   duration: {
     type: String,
     required: true,
     enum: ["1 month", "2 months", "3 months", "6 months", "1 year"],
-    default: "1 month"
+    default: "1 month",
+  },
+  durationDays: {
+    type: Number,
+    required: true,
+    default: 30,
+  },
+  price: {
+    type: Number,
+    required: true,
+    default: 1999, // Total pack price
   },
   priceMonthly: {
     type: Number,
-    required: true
+    required: true,
+    default: 1999, // Monthly effective rate
+  },
+  tag: {
+    type: String,
+    default: "", // e.g. "Most Popular", "Best Value", "Save 25%"
+  },
+  allServicesIncluded: {
+    type: Boolean,
+    default: true,
+  },
+  servicesList: {
+    type: [String],
+    default: DEFAULT_SERVICES,
   },
   planFeatures: {
     unlimitedLoans: {
       type: Boolean,
-      default: true 
+      default: true,
     },
     advancedAnalytics: {
       type: Boolean,
-      default: false
+      default: true,
     },
     prioritySupport: {
       type: Boolean,
-      default: false
+      default: true,
     },
     maxActiveDeals: {
       type: Number,
-      default: 25,
+      default: 100,
     },
     aiDocumentReviewCredits: {
       type: Number,
-      default: 100,
+      default: 500,
     },
     customTermSheets: {
       type: Boolean,
@@ -46,28 +79,28 @@ const planSchema = new mongoose.Schema({
     },
     teamMembersLimit: {
       type: Number,
-      default: 3,
+      default: 10,
     },
   },
   tier: {
     type: String,
-    enum: ["starter", "professional", "enterprise"],
+    enum: ["starter", "professional", "enterprise", "quarterly", "half-yearly", "annual"],
     default: "starter",
   },
   isActive: {
     type: Boolean,
-    default: true
+    default: true,
   },
   isDeleted: {
     type: Boolean,
-    default: false
+    default: false,
   },
   deletedAt: {
     type: Date,
-    default: null
-  }
+    default: null,
+  },
 }, {
-  timestamps: true
+  timestamps: true,
 });
 
 const Plan = mongoose.model('Plan', planSchema);
@@ -80,7 +113,6 @@ Plan.dropOldNameIndex = async () => {
       await Plan.collection.dropIndex('name_1');
     }
   } catch (err) {
-    // Index might not exist or already dropped, ignore error
     if (err.code !== 27 && err.code !== 'IndexNotFound') {
       console.log('Note: Could not drop old name_1 index:', err.message);
     }
