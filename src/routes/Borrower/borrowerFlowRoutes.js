@@ -13,6 +13,8 @@ const {
   getBorrowerProfile,
   updateBorrowerProfile,
   getBorrowerDashboardStats,
+  getBorrowerLoansPortfolio,
+  getBorrowerLoanById,
 } = require("../../controllers/Borrower/borrowerFlowController");
 
 // Lenders marketplace for borrowers
@@ -32,6 +34,10 @@ router.patch("/notifications/:id/read", authenticateUser, markNotificationRead);
 // Profile management
 router.get("/profile", authenticateUser, getBorrowerProfile);
 router.put("/profile", authenticateUser, updateBorrowerProfile);
+
+// Loans Portfolio & EMI Schedules for Borrowers
+router.get("/loans", authenticateUser, getBorrowerLoansPortfolio);
+router.get("/loans/:id", authenticateUser, getBorrowerLoanById);
 
 // Dashboard overview stats
 router.get("/dashboard-stats", authenticateUser, getBorrowerDashboardStats);

@@ -375,6 +375,10 @@ exports.submitLoanApplications = async (req, res) => {
       });
     }
 
+    const rawScore = Number(req.body.creditScore || borrower.borrowerProfile?.creditScore || 750);
+    const appCreditScore = isNaN(rawScore) ? 750 : Math.max(300, Math.min(900, rawScore));
+    const appRiskGrade = computeRiskGrade(appCreditScore);
+
     const borrowerSnapshot = {
       userName: borrower.userName,
       email: borrower.email,
@@ -393,8 +397,8 @@ exports.submitLoanApplications = async (req, res) => {
       businessType: borrower.borrowerProfile?.businessType || "Private Enterprise",
       annualRevenue: borrower.borrowerProfile?.annualRevenue || 0,
       monthlyIncome: borrower.borrowerProfile?.monthlyIncome || 0,
-      creditScore: borrower.borrowerProfile?.creditScore || 750,
-      riskGrade: borrower.borrowerProfile?.riskGrade || "A",
+      creditScore: appCreditScore,
+      riskGrade: appRiskGrade,
       gstNumber: borrower.borrowerProfile?.gstNumber || "",
       yearsInBusiness: borrower.borrowerProfile?.yearsInBusiness || 3,
       totalLoansTaken: borrower.borrowerProfile?.totalLoansTaken || 0,
@@ -495,9 +499,24 @@ exports.getMyApplications = async (req, res) => {
   try {
     const borrowerId = req.user._id;
 
-    const applications = await LoanApplication.find({ borrowerId })
+    const rawApplications = await LoanApplication.find({ borrowerId })
       .populate("lenderId", "userName email mobileNo profileImage companyName lenderProfile")
       .sort({ createdAt: -1 });
+
+    const applications = await Promise.all(
+      rawApplications.map(async (app) => {
+        let activeLoan = null;
+        if (app.status === "accepted") {
+          activeLoan = await Loan.findOne({ applicationId: app._id }).select(
+            "_id amount interestRate tenureMonths monthlyEmi totalPaid remainingAmount paymentStatus installments installmentPlan loanStartDate loanEndDate disbursalVerification status"
+          );
+        }
+        return {
+          ...app.toObject(),
+          activeLoan,
+        };
+      })
+    );
 
     return res.status(200).json({
       success: true,
@@ -574,6 +593,14 @@ exports.markNotificationRead = async (req, res) => {
   }
 };
 
+// Helper: Compute Risk Grade based on Credit Score
+const computeRiskGrade = (score) => {
+  const s = Number(score) || 750;
+  if (s >= 750) return "A";
+  if (s >= 650) return "B";
+  return "C";
+};
+
 // Helper: Calculate Borrower Profile Completion
 const calculateBorrowerProfileCompletion = (user) => {
   if (!user) return { percentage: 0, isComplete: false, missingFields: [] };
@@ -594,6 +621,7 @@ const calculateBorrowerProfileCompletion = (user) => {
     { name: "Pincode", valid: Boolean(user.pincode && user.pincode.trim()) },
     { name: "Source of Income / Occupation", valid: Boolean(bp.employmentType && bp.employmentType.trim()) },
     { name: "Annual Income / Turnover", valid: Boolean(bp.annualRevenue !== undefined && Number(bp.annualRevenue) > 0) },
+    { name: "CIBIL / Credit Score", valid: Boolean(bp.creditScore !== undefined && Number(bp.creditScore) >= 300) },
   ];
 
   const completed = checks.filter((c) => c.valid).length;
@@ -656,6 +684,7 @@ exports.updateBorrowerProfile = async (req, res) => {
       businessType,
       annualRevenue,
       monthlyIncome,
+      creditScore,
       gstNumber,
       yearsInBusiness,
       employmentType,
@@ -679,12 +708,24 @@ exports.updateBorrowerProfile = async (req, res) => {
     if (aadharCardNo !== undefined) user.aadharCardNo = aadharCardNo;
     if (companyName !== undefined) user.companyName = companyName;
 
+    let newCreditScore =
+      creditScore !== undefined
+        ? Number(creditScore)
+        : user.borrowerProfile?.creditScore !== undefined
+        ? Number(user.borrowerProfile.creditScore)
+        : 750;
+    if (isNaN(newCreditScore) || newCreditScore < 300) newCreditScore = 300;
+    if (newCreditScore > 900) newCreditScore = 900;
+    const newRiskGrade = computeRiskGrade(newCreditScore);
+
     user.borrowerProfile = {
       ...user.borrowerProfile,
       businessName: businessName !== undefined ? businessName : user.borrowerProfile?.businessName || companyName || userName,
       businessType: businessType || user.borrowerProfile?.businessType,
       annualRevenue: annualRevenue !== undefined ? Number(annualRevenue) : user.borrowerProfile?.annualRevenue,
       monthlyIncome: monthlyIncome !== undefined ? Number(monthlyIncome) : user.borrowerProfile?.monthlyIncome,
+      creditScore: newCreditScore,
+      riskGrade: newRiskGrade,
       gstNumber: gstNumber !== undefined ? gstNumber : user.borrowerProfile?.gstNumber,
       yearsInBusiness: yearsInBusiness !== undefined ? Number(yearsInBusiness) : user.borrowerProfile?.yearsInBusiness,
       employmentType: employmentType || user.borrowerProfile?.employmentType,
@@ -732,7 +773,178 @@ exports.updateBorrowerProfile = async (req, res) => {
   }
 };
 
-// ─── 8. Borrower Dashboard Overview Stats ───
+// ─── 9. Get Borrower's Loans Portfolio & Repayment Overview ───
+exports.getBorrowerLoansPortfolio = async (req, res) => {
+  try {
+    const borrowerId = req.user._id;
+    const { status, search } = req.query;
+
+    const query = { borrowerId };
+
+    if (status && status !== "all") {
+      if (status === "overdue") {
+        query["installments.status"] = "overdue";
+      } else if (status === "active") {
+        query.status = "active";
+      } else if (status === "closed") {
+        query.status = { $in: ["closed", "paid"] };
+      } else {
+        query.status = status;
+      }
+    }
+
+    if (search) {
+      query.$or = [
+        { dealName: { $regex: search, $options: "i" } },
+        { purpose: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    const loans = await Loan.find(query)
+      .populate("lenderId", "userName companyName email mobileNo profileImage lenderProfile")
+      .populate("applicationId", "amount purpose requestedRate status createdAt")
+      .sort({ createdAt: -1 });
+
+    // Calculate aggregate portfolio metrics for this borrower
+    const allBorrowerLoans = await Loan.find({ borrowerId }).populate(
+      "lenderId",
+      "userName companyName email mobileNo"
+    );
+
+    const totalBorrowed = allBorrowerLoans.reduce((sum, l) => sum + (l.amount || 0), 0);
+    const totalRepaid = allBorrowerLoans.reduce((sum, l) => sum + (l.totalPaid || 0), 0);
+    const totalOutstanding = allBorrowerLoans.reduce(
+      (sum, l) => sum + (l.remainingAmount || 0),
+      0
+    );
+    const totalInterest = allBorrowerLoans.reduce(
+      (sum, l) => sum + (l.totalInterestExpected || 0),
+      0
+    );
+    const activeLoansCount = allBorrowerLoans.filter((l) => l.status === "active").length;
+    const closedLoansCount = allBorrowerLoans.filter(
+      (l) => l.status === "closed" || l.paymentStatus === "paid"
+    ).length;
+
+    // Find next upcoming EMI across all active loans
+    let nextEmi = null;
+    const now = new Date();
+    allBorrowerLoans.forEach((loan) => {
+      if (loan.status === "active" && Array.isArray(loan.installments)) {
+        loan.installments.forEach((inst) => {
+          if (["pending", "overdue"].includes(inst.status)) {
+            const dueDate = new Date(inst.dueDate);
+            if (!nextEmi || dueDate < new Date(nextEmi.dueDate)) {
+              nextEmi = {
+                loanId: loan._id,
+                dealName: loan.dealName || loan.purpose,
+                lenderName: loan.lenderId?.companyName || loan.lenderId?.userName || "Lender",
+                installmentNumber: inst.installmentNumber,
+                dueDate: inst.dueDate,
+                emiAmount: inst.emiAmount,
+                status: inst.status,
+              };
+            }
+          }
+        });
+      }
+    });
+
+    return res.status(200).json({
+      success: true,
+      count: loans.length,
+      metrics: {
+        totalBorrowed,
+        totalRepaid,
+        totalOutstanding,
+        totalInterest,
+        activeLoansCount,
+        closedLoansCount,
+        totalLoans: allBorrowerLoans.length,
+        nextEmi,
+      },
+      loans,
+    });
+  } catch (error) {
+    console.error("Error fetching borrower loans portfolio:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching borrower loans portfolio",
+      error: error.message,
+    });
+  }
+};
+
+// ─── 10. Get Single Borrower Loan with EMI Schedule & Payment Ledger ───
+exports.getBorrowerLoanById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const borrowerId = req.user._id;
+
+    const loan = await Loan.findOne({ _id: id, borrowerId })
+      .populate(
+        "lenderId",
+        "userName companyName email mobileNo address city taluka district state pincode profileImage lenderProfile"
+      )
+      .populate("borrowerId", "userName email mobileNo address companyName borrowerProfile")
+      .populate("applicationId");
+
+    if (!loan) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan record not found or unauthorized access",
+      });
+    }
+
+    // Check for any overdue installments dynamically
+    const now = new Date();
+    let isModified = false;
+    if (Array.isArray(loan.installments)) {
+      loan.installments.forEach((inst) => {
+        if (inst.status === "pending" && new Date(inst.dueDate) < now) {
+          inst.status = "overdue";
+          isModified = true;
+        }
+      });
+      if (isModified) {
+        await loan.save();
+      }
+    }
+
+    const totalInstallments = loan.installments?.length || 0;
+    const paidInstallments =
+      loan.installments?.filter((inst) => inst.status === "paid").length || 0;
+    const remainingInstallments = totalInstallments - paidInstallments;
+
+    return res.status(200).json({
+      success: true,
+      loan,
+      summary: {
+        totalPrincipal: loan.amount,
+        interestRate: loan.interestRate,
+        monthlyEmi: loan.monthlyEmi,
+        totalRepaymentExpected: loan.totalRepaymentExpected,
+        totalInterestExpected: loan.totalInterestExpected,
+        totalPaid: loan.totalPaid,
+        remainingAmount: loan.remainingAmount,
+        totalInstallments,
+        paidInstallments,
+        remainingInstallments,
+        paymentStatus: loan.paymentStatus,
+        status: loan.status,
+      },
+    });
+  } catch (error) {
+    console.error("Error fetching single borrower loan:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching loan details",
+      error: error.message,
+    });
+  }
+};
+
+// ─── 11. Borrower Dashboard Overview Stats ───
 exports.getBorrowerDashboardStats = async (req, res) => {
   try {
     const borrowerId = req.user._id;
@@ -777,3 +989,5 @@ exports.getBorrowerDashboardStats = async (req, res) => {
     });
   }
 };
+
+

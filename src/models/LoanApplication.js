@@ -62,6 +62,17 @@ const loanApplicationSchema = new mongoose.Schema(
       default: "",
     },
 
+    // Disbursal 2-Way OTP Verification
+    disbursalVerification: {
+      otp: { type: String, default: null },
+      otpExpiresAt: { type: Date, default: null },
+      otpAttempts: { type: Number, default: 0 },
+      isVerified: { type: Boolean, default: false },
+      verifiedAt: { type: Date, default: null },
+      disbursedAt: { type: Date, default: null },
+      disbursalMode: { type: String, default: "direct" },
+    },
+
     // Immutable snapshots at the time of application submission
     borrowerSnapshot: {
       userName: String,

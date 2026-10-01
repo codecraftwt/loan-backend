@@ -253,6 +253,82 @@ const loanSchema = new mongoose.Schema(
       },
     ],
 
+    // Link to application if originated via online marketplace
+    applicationId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LoanApplication",
+      index: true,
+      default: null,
+    },
+    status: {
+      type: String,
+      enum: ["active", "closed", "defaulted", "settled", "pending", "pending_disbursal"],
+      default: "active",
+      index: true,
+    },
+    // Disbursal 2-Way OTP Verification
+    disbursalVerification: {
+      otp: { type: String, default: null },
+      otpExpiresAt: { type: Date, default: null },
+      otpAttempts: { type: Number, default: 0 },
+      isVerified: { type: Boolean, default: false },
+      verifiedAt: { type: Date, default: null },
+      disbursedAt: { type: Date, default: null },
+      disbursalMode: { type: String, default: "direct" },
+    },
+    repaymentType: {
+      type: String,
+      enum: ["installment", "one-time"],
+      default: "installment",
+    },
+    repaymentMethod: {
+      type: String,
+      enum: ["reducing", "flat", "bullet"],
+      default: "reducing",
+    },
+    interestRate: {
+      type: Number,
+      default: 12,
+    },
+    tenureMonths: {
+      type: Number,
+      default: 12,
+    },
+    monthlyEmi: {
+      type: Number,
+      default: 0,
+    },
+    totalRepaymentExpected: {
+      type: Number,
+      default: function () {
+        return this.amount;
+      },
+    },
+    totalInterestExpected: {
+      type: Number,
+      default: 0,
+    },
+    // Detailed schedule array for each installment
+    installments: [
+      {
+        installmentNumber: { type: Number, required: true },
+        dueDate: { type: Date, required: true },
+        principalAmount: { type: Number, default: 0 },
+        interestAmount: { type: Number, default: 0 },
+        totalAmount: { type: Number, required: true },
+        paidAmount: { type: Number, default: 0 },
+        status: {
+          type: String,
+          enum: ["pending", "partially_paid", "paid", "overdue", "waived"],
+          default: "pending",
+        },
+        paidAt: { type: Date, default: null },
+        penaltyAmount: { type: Number, default: 0 },
+        transactionReference: { type: String, default: null },
+        notes: { type: String, default: "" },
+      },
+    ],
+
     // Legacy and Repayment tracking fields
     loanStartDate: {
       type: Date,
@@ -275,7 +351,7 @@ const loanSchema = new mongoose.Schema(
     borrowerAcceptanceStatus: {
       type: String,
       enum: ["pending", "accepted", "rejected"],
-      default: "pending",
+      default: "accepted",
     },
     otp: {
       type: String,
