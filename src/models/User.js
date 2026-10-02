@@ -292,6 +292,31 @@ const userSchema = new mongoose.Schema(
         ref: "User",
       },
     ],
+    // ─── DigiLocker Verified Aadhaar & PAN KYC ───
+    digilockerKyc: {
+      isVerified: { type: Boolean, default: false },
+      verifiedAt: { type: Date, default: null },
+      digilockerId: { type: String, default: "" },
+      aadhaarName: { type: String, default: "" },
+      maskedAadhaar: { type: String, default: "" },
+      gender: { type: String, default: "" },
+      dob: { type: String, default: "" },
+      address: {
+        house: { type: String, default: "" },
+        street: { type: String, default: "" },
+        loc: { type: String, default: "" },
+        dist: { type: String, default: "" },
+        state: { type: String, default: "" },
+        pincode: { type: String, default: "" },
+        country: { type: String, default: "India" },
+        fullAddress: { type: String, default: "" },
+      },
+      panNumber: { type: String, default: "" },
+      panName: { type: String, default: "" },
+      profilePhoto: { type: String, default: "" },
+      verificationSource: { type: String, default: "DigiLocker UIDAI" },
+      rawXmlHash: { type: String, default: "" },
+    },
   },
   { timestamps: true }
 );

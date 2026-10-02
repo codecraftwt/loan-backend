@@ -39,7 +39,12 @@ router.put("/profile", authenticateUser, updateBorrowerProfile);
 router.get("/loans", authenticateUser, getBorrowerLoansPortfolio);
 router.get("/loans/:id", authenticateUser, getBorrowerLoanById);
 
+const digilockerRoutes = require("./digilockerRoutes");
+
 // Dashboard overview stats
 router.get("/dashboard-stats", authenticateUser, getBorrowerDashboardStats);
+
+// DigiLocker e-KYC Verification routes
+router.use("/kyc/digilocker", digilockerRoutes);
 
 module.exports = router;

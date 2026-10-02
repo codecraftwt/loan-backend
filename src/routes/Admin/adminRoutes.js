@@ -13,7 +13,8 @@ const {
   getAdminRevenue,
   getRecentActivities,
   getBorrowersByLender,
-  impersonateLender
+  impersonateLender,
+  getLenderSubscriptionHistory
 } = require("../../controllers/Admin/adminController");
 const { getBorrowerById } = require("../../controllers/Borrower/borrowerController");
 const checkLender = require("../../middlewares/checkLender");
@@ -34,18 +35,16 @@ router.get("/plans/active", authenticateUser, checkAdminOrLender, getActivePlans
 router.get("/plans", authenticateUser, checkAdminOrLender, getAllPlans); // Get all plans (including inactive)
 router.get("/plans/:id", authenticateUser, checkAdminOrLender, getPlanById); // Get single plan by ID
 
-// Admin only routes - Lenders with plans
+// Admin only routes - Lenders with plans & Subscriptions
 router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans); // Get all lenders with plan purchase details
+router.get("/lenders/:lenderId/subscriptions", authenticateUser, checkAdmin, getLenderSubscriptionHistory); // Get specific lender's subscription history
+router.get("/lenders/:lenderId/borrowers", authenticateUser, checkAdminOrLender, getBorrowersByLender);
 
-  
 // Admin only routes - Revenue statistics
 router.get("/revenue", authenticateUser, checkAdmin, getAdminRevenue); // Get admin revenue statistics
 
 // Admin only routes - Recent activities
 router.get("/recent-activities", authenticateUser, checkAdmin, getRecentActivities); // Get admin recent activities
-
-router.get("/lenders/plans", authenticateUser, checkAdmin, getLendersWithPlans);      // specific first
-router.get("/lenders/:lenderId/borrowers", authenticateUser, checkAdminOrLender, getBorrowersByLender);
 
 // Admin & Lender routes - Single Borrower Details
 router.get("/borrowers/:id/details", authenticateUser, checkAdminOrLender, getBorrowerById);

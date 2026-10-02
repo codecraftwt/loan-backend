@@ -641,7 +641,7 @@ const calculateBorrowerProfileCompletion = (user) => {
 exports.getBorrowerProfile = async (req, res) => {
   try {
     const borrower = await User.findById(req.user._id).select(
-      "userName email mobileNo altMobileNo address city taluka district state pincode stateOfOperation panCardNumber aadharCardNo companyName borrowerProfile createdAt"
+      "userName email mobileNo altMobileNo address city taluka district state pincode stateOfOperation panCardNumber aadharCardNo companyName borrowerProfile digilockerKyc createdAt"
     );
 
     if (!borrower) {

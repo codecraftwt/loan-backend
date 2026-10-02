@@ -1,6 +1,7 @@
 const Plan = require("../../models/Plan");
 const User = require("../../models/User");
 const Loan = require("../../models/Loan");
+const SubscriptionHistory = require("../../models/SubscriptionHistory");
 const jwt = require("jsonwebtoken");
 const paginateQuery = require("../../utils/pagination");
 
@@ -671,13 +672,19 @@ const getLendersWithPlans = async (req, res) => {
       search, 
       planStatus, // 'active', 'expired', 'all'
       sortBy = "planPurchaseDate", 
-      sortOrder = "desc" 
+      sortOrder = "desc",
+      lenderId: queryLenderId
     } = req.query;
+    const lenderId = req.params.lenderId || queryLenderId;
 
     // Build query - all lenders (roleId: 1)
     const query = {
       roleId: 1,
     };
+
+    if (lenderId) {
+      query._id = lenderId;
+    }
 
     const now = new Date();
     
@@ -730,7 +737,7 @@ const getLendersWithPlans = async (req, res) => {
       populate: [
         {
           path: "currentPlanId",
-          select: "planName description duration durationDays price priceMonthly planFeatures isActive",
+          select: "planName description duration durationDays price priceMonthly tag allServicesIncluded planFeatures isActive",
         },
       ],
       select: "-password -deviceTokens -fraudDetection",
@@ -745,6 +752,40 @@ const getLendersWithPlans = async (req, res) => {
       options
     );
 
+    // Fetch live loan statistics for lenders
+    const lenderIds = lenders.map((l) => l._id);
+    const allLenderLoans = await Loan.find({ lenderId: { $in: lenderIds } })
+      .select("lenderId amount paymentStatus remainingAmount totalPaid")
+      .lean();
+
+    const loansByLender = {};
+    allLenderLoans.forEach((loan) => {
+      const idStr = loan.lenderId?.toString();
+      if (!idStr) return;
+      if (!loansByLender[idStr]) {
+        loansByLender[idStr] = {
+          totalLoans: 0,
+          totalAmount: 0,
+          totalPaid: 0,
+          totalRemaining: 0,
+          activeLoans: 0,
+          paidLoans: 0,
+          overdueLoans: 0,
+        };
+      }
+      loansByLender[idStr].totalLoans += 1;
+      loansByLender[idStr].totalAmount += (loan.amount || 0);
+      loansByLender[idStr].totalPaid += (loan.totalPaid || 0);
+      loansByLender[idStr].totalRemaining += (loan.remainingAmount || 0);
+      if (loan.paymentStatus === "pending" || loan.paymentStatus === "part paid") {
+        loansByLender[idStr].activeLoans += 1;
+      } else if (loan.paymentStatus === "paid") {
+        loansByLender[idStr].paidLoans += 1;
+      } else if (loan.paymentStatus === "overdue") {
+        loansByLender[idStr].overdueLoans += 1;
+      }
+    });
+
     // Format response data with plan status and accurate details
     const formattedLenders = lenders.map((lender) => {
       const expiryDate = lender.planExpiryDate ? new Date(lender.planExpiryDate) : null;
@@ -754,6 +795,16 @@ const getLendersWithPlans = async (req, res) => {
         ? Math.max(0, Math.ceil((expiryDate - now) / (1000 * 60 * 60 * 24)))
         : 0;
       const planName = lender.currentPlanId?.planName || null;
+      const planPrice = lender.currentPlanId?.price || lender.currentPlanId?.priceMonthly || 0;
+      const lenderLoanStats = loansByLender[lender._id.toString()] || {
+        totalLoans: 0,
+        totalAmount: 0,
+        totalPaid: 0,
+        totalRemaining: 0,
+        activeLoans: 0,
+        paidLoans: 0,
+        overdueLoans: 0,
+      };
 
       return {
         lender: {
@@ -761,14 +812,28 @@ const getLendersWithPlans = async (req, res) => {
           userName: lender.userName,
           email: lender.email,
           mobileNo: lender.mobileNo,
+          altMobileNo: lender.altMobileNo,
           profileImage: lender.profileImage,
           aadharCardNo: lender.aadharCardNo,
           panCardNumber: lender.panCardNumber,
           address: lender.address,
+          city: lender.city,
+          taluka: lender.taluka,
+          district: lender.district,
+          state: lender.state,
+          pincode: lender.pincode,
+          companyName: lender.companyName,
+          licenseNumber: lender.licenseNumber,
+          ein: lender.ein,
           isMobileVerified: lender.isMobileVerified,
           isActive: lender.isActive,
+          lenderProfile: lender.lenderProfile,
+          loanStats: lenderLoanStats,
           createdAt: lender.createdAt,
           updatedAt: lender.updatedAt,
+          currentPlanId: lender.currentPlanId?._id || lender.currentPlanId,
+          planPurchaseDate: lender.planPurchaseDate,
+          planExpiryDate: lender.planExpiryDate,
         },
         currentPlan: lender.currentPlanId ? {
           _id: lender.currentPlanId._id,
@@ -776,12 +841,21 @@ const getLendersWithPlans = async (req, res) => {
           description: lender.currentPlanId.description,
           duration: lender.currentPlanId.duration,
           durationDays: lender.currentPlanId.durationDays,
+          price: planPrice,
           priceMonthly: lender.currentPlanId.priceMonthly,
+          tag: lender.currentPlanId.tag,
+          allServicesIncluded: lender.currentPlanId.allServicesIncluded ?? true,
           planFeatures: lender.currentPlanId.planFeatures,
           isActive: lender.currentPlanId.isActive,
         } : null,
         planPurchaseDetails: {
           planName: planName,
+          price: planPrice,
+          priceMonthly: lender.currentPlanId?.priceMonthly || planPrice,
+          duration: lender.currentPlanId?.duration,
+          durationDays: lender.currentPlanId?.durationDays,
+          purchaseDate: lender.planPurchaseDate,
+          expiryDate: lender.planExpiryDate,
           planPurchaseDate: lender.planPurchaseDate,
           planExpiryDate: lender.planExpiryDate,
           razorpayOrderId: lender.razorpayOrderId,
@@ -1222,6 +1296,75 @@ const getRecentActivities = async (req, res) => {
   }
 };
 
+// Get a specific lender's plan purchase & subscription history (Admin only)
+const getLenderSubscriptionHistory = async (req, res) => {
+  try {
+    const { lenderId } = req.params;
+
+    const lender = await User.findOne({ _id: lenderId, roleId: 1 }).populate("currentPlanId");
+    if (!lender) {
+      return res.status(404).json({
+        success: false,
+        message: "Lender not found",
+      });
+    }
+
+    // Fetch records from SubscriptionHistory
+    let history = await SubscriptionHistory.find({ userId: lenderId })
+      .populate("planId", "planName duration durationDays price priceMonthly tag")
+      .sort({ purchaseDate: -1, createdAt: -1 })
+      .lean();
+
+    const now = new Date();
+
+    // If no records in SubscriptionHistory yet, but user has an active/past plan assigned
+    if (history.length === 0 && (lender.currentPlanId || lender.planPurchaseDate)) {
+      const plan = lender.currentPlanId;
+      const isPlanActive = lender.planExpiryDate && new Date(lender.planExpiryDate) > now;
+      history = [
+        {
+          _id: "record_" + lender._id,
+          userId: lender._id,
+          planId: plan ? plan._id : null,
+          planName: plan?.planName || "Basic Plan",
+          duration: plan?.duration || "1 month",
+          durationDays: plan?.durationDays || 30,
+          price: plan?.price || plan?.priceMonthly || 0,
+          priceMonthly: plan?.priceMonthly || 0,
+          tag: plan?.tag || "",
+          razorpayOrderId: lender.razorpayOrderId || "N/A",
+          razorpayPaymentId: lender.razorpayPaymentId || "N/A",
+          purchaseDate: lender.planPurchaseDate || lender.createdAt,
+          startDate: lender.planPurchaseDate || lender.createdAt,
+          expiryDate: lender.planExpiryDate || new Date(new Date(lender.createdAt).getTime() + 30 * 24 * 60 * 60 * 1000),
+          paymentStatus: "completed",
+          isExtension: false,
+          isActive: isPlanActive,
+        },
+      ];
+    } else {
+      history = history.map((item) => ({
+        ...item,
+        isActive: item.expiryDate && new Date(item.expiryDate) > now,
+      }));
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Lender subscription history fetched successfully",
+      count: history.length,
+      data: history,
+    });
+  } catch (error) {
+    console.error("Error fetching lender subscription history:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching subscription history",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createPlan,
   editPlan,
@@ -1235,4 +1378,5 @@ module.exports = {
   getBorrowersByLender,
   impersonateLender,
   seedInitialDurationPlans,
+  getLenderSubscriptionHistory,
 };
