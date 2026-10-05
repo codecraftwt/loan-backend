@@ -33,6 +33,36 @@ const createPlanOrder = async (req, res) => {
       });
     }
 
+    // Check if lender already has an active unexpired subscription
+    const now = new Date();
+    const hasActivePlan =
+      user.currentPlanId &&
+      user.planExpiryDate &&
+      new Date(user.planExpiryDate) > now;
+
+    if (hasActivePlan) {
+      await user.populate("currentPlanId", "planName duration durationDays");
+      const activePlanName = user.currentPlanId?.planName || "Active Subscription";
+      const expDateFormatted = new Date(user.planExpiryDate).toLocaleDateString(
+        "en-IN",
+        {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        }
+      );
+
+      return res.status(400).json({
+        success: false,
+        message: `You already have an active subscription (${activePlanName}) valid until ${expDateFormatted}. You cannot purchase a new subscription until your current plan has ended.`,
+        data: {
+          hasActivePlan: true,
+          planName: activePlanName,
+          expiryDate: user.planExpiryDate,
+        },
+      });
+    }
+
     // Get plan details
     const plan = await Plan.findById(planId);
     if (!plan) {
@@ -76,11 +106,6 @@ const createPlanOrder = async (req, res) => {
 
     const order = await razorpayInstance.orders.create(options);
 
-    // Check if lender already has an active plan (for renewal/extension notice)
-    const now = new Date();
-    const hasActivePlan = user.currentPlanId && user.planExpiryDate && new Date(user.planExpiryDate) > now;
-    const currentExpiry = hasActivePlan ? user.planExpiryDate : null;
-
     return res.status(200).json({
       success: true,
       message: "Order created successfully",
@@ -88,8 +113,8 @@ const createPlanOrder = async (req, res) => {
         orderId: order.id,
         amount: order.amount,
         currency: order.currency,
-        isExtension: hasActivePlan,
-        currentExpiryDate: currentExpiry,
+        isExtension: false,
+        currentExpiryDate: null,
         plan: {
           id: plan._id,
           planName: plan.planName,
@@ -178,14 +203,13 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
       });
     }
 
-    // Calculate expiry date: If user has an active plan, extend from existing expiry date!
+    // Check if lender already has an active unexpired plan
     const now = new Date();
-    let baseDate = now;
-    let isExtended = false;
-
-    if (user.planExpiryDate && new Date(user.planExpiryDate) > now) {
-      baseDate = new Date(user.planExpiryDate);
-      isExtended = true;
+    if (user.currentPlanId && user.planExpiryDate && new Date(user.planExpiryDate) > now) {
+      return res.status(400).json({
+        success: false,
+        message: "You already have an active subscription. You cannot purchase a new subscription until your current plan has ended.",
+      });
     }
 
     // Determine days to add
@@ -199,7 +223,7 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
       else daysToAdd = 30;
     }
 
-    const newExpiryDate = new Date(baseDate.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
+    const newExpiryDate = new Date(now.getTime() + daysToAdd * 24 * 60 * 60 * 1000);
 
     // Update user with plan details
     user.currentPlanId = plan._id;
@@ -226,10 +250,10 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
         razorpayPaymentId: razorpay_payment_id,
         razorpaySignature: razorpay_signature,
         purchaseDate: now,
-        startDate: baseDate,
+        startDate: now,
         expiryDate: newExpiryDate,
         paymentStatus: "completed",
-        isExtension: isExtended,
+        isExtension: false,
       });
     } catch (historyErr) {
       console.error("Error creating subscription history record:", historyErr);
@@ -239,9 +263,7 @@ const verifyPaymentAndActivatePlan = async (req, res) => {
 
     return res.status(200).json({
       success: true,
-      message: isExtended
-        ? `Recharge successful! Your subscription has been extended by ${daysToAdd} days.`
-        : `Subscription activated successfully for ${daysToAdd} days.`,
+      message: `Subscription activated successfully for ${daysToAdd} days.`,
       data: {
         plan: {
           id: plan._id,
