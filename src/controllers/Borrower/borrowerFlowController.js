@@ -319,11 +319,76 @@ exports.getFavoriteLenders = async (req, res) => {
   }
 };
 
-// ─── 3. Submit Loan Application to Selected Lenders (Max 8 Lenders) ───
+// Helper: Expire pending loan requests older than 48 hours
+const expireOldPendingApplications = async () => {
+  try {
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+    const expiredApps = await LoanApplication.find({
+      status: "pending",
+      createdAt: { $lte: fortyEightHoursAgo },
+    }).populate("borrowerId lenderId");
+
+    if (expiredApps.length === 0) return 0;
+
+    const expiredIds = expiredApps.map((a) => a._id);
+    await LoanApplication.updateMany(
+      { _id: { $in: expiredIds } },
+      {
+        $set: {
+          status: "auto_rejected",
+          rejectionReason: "Auto-rejected: Request expired after 48 hours without lender response.",
+          actionTakenAt: new Date(),
+        },
+      }
+    );
+
+    const notificationsToInsert = [];
+    for (const app of expiredApps) {
+      const bId = app.borrowerId?._id || app.borrowerId;
+      const lenderName =
+        app.lenderSnapshot?.companyName ||
+        app.lenderSnapshot?.userName ||
+        app.lenderId?.companyName ||
+        app.lenderId?.userName ||
+        "the lender";
+
+      if (bId) {
+        notificationsToInsert.push({
+          userId: bId,
+          title: "Loan Request Auto-Expired (48h Window)",
+          message: `Your loan request of ₹${Number(app.amount || 0).toLocaleString("en-IN")} to ${lenderName} has expired as no response was received within 48 hours. You are now eligible to apply with another lender.`,
+          type: "loan_expired",
+          metadata: {
+            applicationId: app._id,
+            amount: app.amount,
+            lenderName,
+          },
+        });
+      }
+    }
+
+    if (notificationsToInsert.length > 0) {
+      await Notification.insertMany(notificationsToInsert).catch((err) =>
+        console.error("Error inserting expiration notifications:", err)
+      );
+    }
+
+    return expiredApps.length;
+  } catch (err) {
+    console.error("Error in expireOldPendingApplications:", err);
+    return 0;
+  }
+};
+
+exports.expireOldPendingApplications = expireOldPendingApplications;
+
+// ─── 3. Submit Loan Application to 1 Selected Lender (Single Application Rule) ───
 exports.submitLoanApplications = async (req, res) => {
   try {
     const borrowerId = req.user._id;
-    const {
+    let {
+      lenderId,
       lenderIds,
       amount,
       purpose,
@@ -332,18 +397,54 @@ exports.submitLoanApplications = async (req, res) => {
       notes,
     } = req.body;
 
-    // Validate selected lenders count (Max 8)
-    if (!Array.isArray(lenderIds) || lenderIds.length === 0) {
+    // 1. First expire any pending requests older than 48 hours
+    await expireOldPendingApplications();
+
+    // 2. Determine target lender (ONLY 1 LENDER ALLOWED)
+    let targetLenderId = lenderId;
+    if (!targetLenderId && Array.isArray(lenderIds)) {
+      if (lenderIds.length > 1) {
+        return res.status(400).json({
+          success: false,
+          message: "Borrowers can only select and apply to 1 lender at a time. Please select only 1 lender.",
+        });
+      }
+      targetLenderId = lenderIds[0];
+    } else if (!targetLenderId && typeof lenderIds === "string") {
+      targetLenderId = lenderIds;
+    }
+
+    if (!targetLenderId) {
       return res.status(400).json({
         success: false,
-        message: "Please select at least 1 lender to submit your application.",
+        message: "Please select 1 lender to submit your loan application.",
       });
     }
 
-    if (lenderIds.length > 8) {
+    // 3. Check if borrower already has an active pending application
+    const existingPending = await LoanApplication.findOne({
+      borrowerId,
+      status: "pending",
+    }).populate("lenderId", "userName companyName");
+
+    if (existingPending) {
+      const createdAtTime = new Date(existingPending.createdAt).getTime();
+      const expiresAtTime = createdAtTime + 48 * 60 * 60 * 1000;
+      const remainingMs = Math.max(0, expiresAtTime - Date.now());
+      const remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+      const lenderName =
+        existingPending.lenderSnapshot?.companyName ||
+        existingPending.lenderSnapshot?.userName ||
+        existingPending.lenderId?.companyName ||
+        existingPending.lenderId?.userName ||
+        "your selected lender";
+
       return res.status(400).json({
         success: false,
-        message: "A borrower can apply to a maximum of 8 lenders at the same time.",
+        hasPendingApplication: true,
+        pendingApplicationId: existingPending._id,
+        remainingHours,
+        message: `You currently have an active loan application in review with ${lenderName}. You can only apply to 1 lender at a time. If the lender rejects or does not respond within the remaining ${remainingHours} hour(s) (48h review window), you will be eligible to apply with another lender.`,
       });
     }
 
@@ -406,89 +507,78 @@ exports.submitLoanApplications = async (req, res) => {
       defaultsCount: borrower.borrowerProfile?.defaultsCount || 0,
     };
 
-    // Verify all selected lenders exist, are active, and have an active subscription plan
+    // Verify selected lender exists, is active, and has active plan
     const now = new Date();
-    const validLenders = await User.find({
-      _id: { $in: lenderIds },
+    const lender = await User.findOne({
+      _id: targetLenderId,
       roleId: 1,
       isActive: true,
       currentPlanId: { $ne: null },
       planExpiryDate: { $gt: now },
     });
 
-    if (validLenders.length !== lenderIds.length) {
+    if (!lender) {
       return res.status(400).json({
         success: false,
-        message: "One or more selected lenders are invalid, unverified, or do not have an active subscription.",
+        message: "The selected lender is invalid, unverified, or does not have an active subscription.",
       });
     }
 
-    // Generate a unique batch / group ID for this submission
-    const applicationGroupId = `GRP-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+    const applicationGroupId = `APP-${Date.now()}-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
 
-    // Create applications and notifications for each lender
-    const createdApplications = [];
-    const notificationsToInsert = [];
+    const lenderSnapshot = {
+      userName: lender.userName,
+      companyName: lender.companyName || lender.userName,
+      email: lender.email,
+      mobileNo: lender.mobileNo,
+      minInterestRate: lender.lenderProfile?.minInterestRate || 9.5,
+      maxInterestRate: lender.lenderProfile?.maxInterestRate || 14.0,
+      servicesOffered: lender.lenderProfile?.servicesOffered || [],
+    };
 
-    for (const lender of validLenders) {
-      const lenderSnapshot = {
-        userName: lender.userName,
-        companyName: lender.companyName || lender.userName,
-        email: lender.email,
-        mobileNo: lender.mobileNo,
-        minInterestRate: lender.lenderProfile?.minInterestRate || 9.5,
-        maxInterestRate: lender.lenderProfile?.maxInterestRate || 14.0,
-        servicesOffered: lender.lenderProfile?.servicesOffered || [],
-      };
+    const application = new LoanApplication({
+      applicationGroupId,
+      borrowerId,
+      lenderId: lender._id,
+      amount: Number(amount),
+      purpose: purpose || "Working Capital",
+      tenureMonths: Number(tenureMonths) || 12,
+      requestedRate: Number(requestedRate) || lender.lenderProfile?.minInterestRate || 10.5,
+      status: "pending",
+      notes: notes || "",
+      borrowerSnapshot,
+      lenderSnapshot,
+    });
 
-      const application = new LoanApplication({
+    await application.save();
+
+    // Send notification to lender
+    await Notification.create({
+      userId: lender._id,
+      title: "New Loan Application Received",
+      message: `New application of ₹${Number(amount).toLocaleString("en-IN")} received from ${borrower.userName} for ${purpose || "Working Capital"}. Response required within 48 hours.`,
+      type: "loan_received",
+      metadata: {
+        applicationId: application._id,
         applicationGroupId,
-        borrowerId,
-        lenderId: lender._id,
         amount: Number(amount),
-        purpose: purpose || "Working Capital",
-        tenureMonths: Number(tenureMonths) || 12,
-        requestedRate: Number(requestedRate) || lender.lenderProfile?.minInterestRate || 10.5,
-        status: "pending",
-        notes: notes || "",
-        borrowerSnapshot,
-        lenderSnapshot,
-      });
-
-      await application.save();
-      createdApplications.push(application);
-
-      // Notification for lender
-      notificationsToInsert.push({
-        userId: lender._id,
-        title: "New Loan Application Received",
-        message: `New application of ₹${Number(amount).toLocaleString("en-IN")} received from ${borrower.userName} for ${purpose || "Working Capital"}.`,
-        type: "loan_received",
-        metadata: {
-          applicationId: application._id,
-          applicationGroupId,
-          amount: Number(amount),
-          borrowerName: borrower.userName,
-        },
-      });
-    }
-
-    if (notificationsToInsert.length > 0) {
-      await Notification.insertMany(notificationsToInsert);
-    }
+        borrowerName: borrower.userName,
+      },
+    });
 
     return res.status(201).json({
       success: true,
-      message: `Your loan application has been successfully dispatched to ${createdApplications.length} lender(s).`,
+      message: `Your loan application has been successfully submitted to ${lender.companyName || lender.userName}. The lender has 48 hours to review.`,
       applicationGroupId,
-      applicationsCount: createdApplications.length,
-      applications: createdApplications,
+      applicationsCount: 1,
+      application,
+      applications: [application],
     });
   } catch (error) {
-    console.error("Error submitting loan applications:", error);
+    console.error("Error submitting loan application:", error);
     return res.status(500).json({
       success: false,
-      message: "Server error while submitting loan applications",
+      message: "Server error while submitting loan application",
       error: error.message,
     });
   }
@@ -498,6 +588,9 @@ exports.submitLoanApplications = async (req, res) => {
 exports.getMyApplications = async (req, res) => {
   try {
     const borrowerId = req.user._id;
+
+    // Run expiration check for any requests older than 48 hours
+    await expireOldPendingApplications();
 
     const rawApplications = await LoanApplication.find({ borrowerId })
       .populate("lenderId", "userName email mobileNo profileImage companyName lenderProfile")
@@ -511,16 +604,32 @@ exports.getMyApplications = async (req, res) => {
             "_id amount interestRate tenureMonths monthlyEmi totalPaid remainingAmount paymentStatus installments installmentPlan loanStartDate loanEndDate disbursalVerification status"
           );
         }
+
+        // Calculate 48h expiration details for pending requests
+        let remainingHours = null;
+        let expiresAt = null;
+        if (app.status === "pending") {
+          const createdAtTime = new Date(app.createdAt).getTime();
+          expiresAt = new Date(createdAtTime + 48 * 60 * 60 * 1000);
+          const remainingMs = Math.max(0, expiresAt.getTime() - Date.now());
+          remainingHours = Math.ceil(remainingMs / (1000 * 60 * 60));
+        }
+
         return {
           ...app.toObject(),
           activeLoan,
+          remainingHours,
+          expiresAt,
         };
       })
     );
 
+    const hasActivePending = applications.some((a) => a.status === "pending");
+
     return res.status(200).json({
       success: true,
       count: applications.length,
+      hasActivePending,
       applications,
     });
   } catch (error) {

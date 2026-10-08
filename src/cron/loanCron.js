@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const { checkAndUpdateOverdueLoans } = require('../controllers/Loans/LoansController');
 const { updateBorrowerFraudStatus } = require('../services/fraudDetectionService');
+const { expireOldPendingApplications } = require('../controllers/Borrower/borrowerFlowController');
 const User = require('../models/User');
 const Loan = require('../models/Loan');
 const Plan = require('../models/Plan');
@@ -13,6 +14,18 @@ const {
   sendPendingLoanNotificationToBorrower,
   sendSubscriptionReminderNotification
 } = require('../services/notificationService');
+
+// Cron job to auto-reject pending loan applications older than 48 hours (every 15 minutes)
+cron.schedule('*/15 * * * *', async () => {
+    try {
+        const expiredCount = await expireOldPendingApplications();
+        if (expiredCount > 0) {
+            console.log(`[Cron] Auto-rejected ${expiredCount} expired loan application(s) older than 48h.`);
+        }
+    } catch (error) {
+        console.error('Error in 48-hour loan application expiration cron job:', error);
+    }
+});
 
 // Cron job to check for overdue loans every day at 9 AM
 cron.schedule('0 9 * * *', async () => {

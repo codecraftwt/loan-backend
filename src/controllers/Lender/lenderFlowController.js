@@ -6,6 +6,7 @@ const {
   generateRepaymentSchedule,
   allocatePaymentToLoan,
 } = require("../../utils/repaymentEngine");
+const { expireOldPendingApplications } = require("../Borrower/borrowerFlowController");
 
 // ─── 1. Get Connected Borrowers (ONLY borrowers whose loan requests were accepted by this particular lender) ───
 exports.getAvailableBorrowers = async (req, res) => {
@@ -123,7 +124,7 @@ exports.getBorrowerDetails = async (req, res) => {
     const { id } = req.params;
 
     const borrower = await User.findOne({ _id: id, roleId: 2 }).select(
-      "userName email mobileNo address panCardNumber aadharCardNo companyName borrowerProfile createdAt"
+      "userName email mobileNo address panCardNumber aadharCardNo companyName borrowerProfile digilockerKyc createdAt"
     );
 
     if (!borrower) {
@@ -133,15 +134,69 @@ exports.getBorrowerDetails = async (req, res) => {
       });
     }
 
+    // Get all loans this borrower has taken across the platform
+    const loanQuery = [{ borrowerId: borrower._id }];
+    if (borrower.aadharCardNo) loanQuery.push({ aadhaarNumber: borrower.aadharCardNo });
+    if (borrower.mobileNo) loanQuery.push({ mobileNumber: borrower.mobileNo });
+
+    const loans = await Loan.find({ $or: loanQuery })
+      .populate("lenderId", "companyName userName email mobileNo")
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const totalLoansCount = loans.length;
+    const totalLoanAmount = loans.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+    const totalPaidAmount = loans.reduce((s, l) => s + (Number(l.totalPaid) || 0), 0);
+    const totalRemainingAmount = loans.reduce((s, l) => s + (Number(l.remainingAmount) || 0), 0);
+    const hasActiveLoan = loans.some((l) => l.paymentStatus === "pending" || l.paymentStatus === "part paid");
+    const hasOverdueLoan = loans.some((l) => l.paymentStatus === "overdue");
+
     // Get applications this borrower sent to this specific lender
     const historyWithLender = await LoanApplication.find({
       borrowerId: id,
       lenderId: req.user._id,
     }).sort({ createdAt: -1 });
 
+    const formattedLoans = loans.map((l) => ({
+      _id: l._id,
+      loanId: l._id,
+      amount: l.amount,
+      totalPaid: l.totalPaid,
+      remainingAmount: l.remainingAmount,
+      remainigAmount: l.remainingAmount,
+      paymentStatus: l.paymentStatus,
+      loanGivenDate: l.loanGivenDate || l.createdAt,
+      loanEndDate: l.loanEndDate,
+      purpose: l.purpose || l.dealName || "Commercial Loan",
+      dealName: l.dealName || l.purpose || "Commercial Loan",
+      lenderName: l.lenderId?.companyName || l.lenderId?.userName || "Institutional Lender",
+      lenderEmail: l.lenderId?.email,
+      interestRate: l.interestRate,
+      tenureMonths: l.tenureMonths,
+      monthlyEmi: l.monthlyEmi,
+    }));
+
     return res.status(200).json({
       success: true,
-      borrower,
+      borrower: {
+        ...borrower.toObject(),
+        totalLoansCount,
+        totalLoanAmount,
+        totalPaidAmount,
+        totalRemainingAmount,
+        hasActiveLoan,
+        hasOverdueLoan,
+        loans: formattedLoans,
+      },
+      loans: formattedLoans,
+      summary: {
+        totalLoansCount,
+        totalLoanAmount,
+        totalPaidAmount,
+        totalRemainingAmount,
+        hasActiveLoan,
+        hasOverdueLoan,
+      },
       historyWithLender,
     });
   } catch (error) {
@@ -157,6 +212,7 @@ exports.getBorrowerDetails = async (req, res) => {
 // ─── 3. Get Incoming Loan Requests (Received by this Lender) ───
 exports.getIncomingRequests = async (req, res) => {
   try {
+    await expireOldPendingApplications();
     const lenderId = req.user._id;
     const { status, search } = req.query;
 
@@ -199,12 +255,13 @@ exports.getIncomingRequests = async (req, res) => {
 // ─── 4. Get Single Request Details ───
 exports.getRequestById = async (req, res) => {
   try {
+    await expireOldPendingApplications();
     const { id } = req.params;
     const lenderId = req.user._id;
 
     const request = await LoanApplication.findOne({ _id: id, lenderId }).populate(
       "borrowerId",
-      "userName email mobileNo altMobileNo address city taluka district state pincode aadharCardNo panCardNumber companyName borrowerProfile profileImage createdAt"
+      "userName email mobileNo altMobileNo address city taluka district state pincode aadharCardNo panCardNumber companyName borrowerProfile profileImage digilockerKyc createdAt"
     );
 
     if (!request) {
@@ -214,9 +271,53 @@ exports.getRequestById = async (req, res) => {
       });
     }
 
+    // Fetch borrower's total loan history across all lenders for comprehensive underwriting
+    let borrowerLoans = [];
+    let borrowerSummary = null;
+    if (request.borrowerId) {
+      const b = request.borrowerId;
+      const loanQuery = [{ borrowerId: b._id }];
+      if (b.aadharCardNo) loanQuery.push({ aadhaarNumber: b.aadharCardNo });
+      if (b.mobileNo) loanQuery.push({ mobileNumber: b.mobileNo });
+
+      const rawLoans = await Loan.find({ $or: loanQuery })
+        .populate("lenderId", "companyName userName email")
+        .sort({ createdAt: -1 })
+        .lean();
+
+      const totalLoansCount = rawLoans.length;
+      const totalLoanAmount = rawLoans.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+      const totalPaidAmount = rawLoans.reduce((s, l) => s + (Number(l.totalPaid) || 0), 0);
+      const totalRemainingAmount = rawLoans.reduce((s, l) => s + (Number(l.remainingAmount) || 0), 0);
+
+      borrowerSummary = {
+        totalLoansCount,
+        totalLoanAmount,
+        totalPaidAmount,
+        totalRemainingAmount,
+        hasActiveLoan: rawLoans.some((l) => l.paymentStatus === "pending" || l.paymentStatus === "part paid"),
+        hasOverdueLoan: rawLoans.some((l) => l.paymentStatus === "overdue"),
+      };
+
+      borrowerLoans = rawLoans.map((l) => ({
+        _id: l._id,
+        loanId: l._id,
+        amount: l.amount,
+        totalPaid: l.totalPaid,
+        remainingAmount: l.remainingAmount,
+        paymentStatus: l.paymentStatus,
+        loanGivenDate: l.loanGivenDate || l.createdAt,
+        loanEndDate: l.loanEndDate,
+        purpose: l.purpose || l.dealName || "Commercial Loan",
+        lenderName: l.lenderId?.companyName || l.lenderId?.userName || "Institutional Lender",
+      }));
+    }
+
     return res.status(200).json({
       success: true,
       request,
+      borrowerLoans,
+      borrowerSummary,
     });
   } catch (error) {
     console.error("Error fetching request details:", error);
@@ -231,6 +332,7 @@ exports.getRequestById = async (req, res) => {
 // ─── 5. ACCEPT LOAN REQUEST (Atomic Acceptance + Auto-Rejection of Other Pending Requests) ───
 exports.acceptLoanRequest = async (req, res) => {
   try {
+    await expireOldPendingApplications();
     const { id } = req.params;
     const lenderId = req.user._id;
 
@@ -249,6 +351,19 @@ exports.acceptLoanRequest = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: `This application cannot be accepted because it is already marked as '${targetApplication.status}'.`,
+      });
+    }
+
+    // Check 48-hour expiration
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    if (new Date(targetApplication.createdAt) < fortyEightHoursAgo) {
+      targetApplication.status = "auto_rejected";
+      targetApplication.rejectionReason = "Auto-rejected: Request expired after 48 hours without lender response.";
+      targetApplication.actionTakenAt = new Date();
+      await targetApplication.save();
+      return res.status(400).json({
+        success: false,
+        message: "This loan request has expired (exceeded 48 hours without response) and can no longer be accepted.",
       });
     }
 
