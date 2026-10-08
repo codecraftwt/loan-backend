@@ -14,12 +14,16 @@ const {
   getRecentActivities,
   getBorrowersByLender,
   impersonateLender,
-  getLenderSubscriptionHistory
+  getLenderSubscriptionHistory,
+  getAdminBorrowers
 } = require("../../controllers/Admin/adminController");
 const { getBorrowerById } = require("../../controllers/Borrower/borrowerController");
 const checkLender = require("../../middlewares/checkLender");
 
 const router = express.Router();
+
+// Admin only routes - Borrowers directory & details
+router.get("/borrowers", authenticateUser, checkAdmin, getAdminBorrowers);
 
 // Admin only routes - Create and Edit plans
 router.post("/plans", authenticateUser, checkAdmin, createPlan);  

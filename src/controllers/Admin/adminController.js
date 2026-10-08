@@ -1365,6 +1365,147 @@ const getLenderSubscriptionHistory = async (req, res) => {
   }
 };
 
+// Get all borrowers with aggregated loan stats and KYC details for Admin
+const getAdminBorrowers = async (req, res) => {
+  try {
+    const {
+      page = 1,
+      limit = 10,
+      search,
+      kycStatus, // 'all', 'verified', 'unverified'
+      loanStatus, // 'all', 'active', 'overdue', 'clean'
+      sortBy = "createdAt",
+      sortOrder = "desc",
+    } = req.query;
+
+    const query = { roleId: 2 }; // Borrowers only
+
+    // KYC Status filter
+    if (kycStatus === "verified") {
+      query["digilockerKyc.isVerified"] = true;
+    } else if (kycStatus === "unverified") {
+      query.$or = [
+        { "digilockerKyc.isVerified": false },
+        { "digilockerKyc.isVerified": { $exists: false } },
+      ];
+    }
+
+    // Search filter
+    if (search && search.trim() !== "") {
+      const searchTerm = search.trim();
+      const searchConditions = [
+        { userName: { $regex: searchTerm, $options: "i" } },
+        { email: { $regex: searchTerm, $options: "i" } },
+        { mobileNo: { $regex: searchTerm, $options: "i" } },
+        { aadharCardNo: { $regex: searchTerm, $options: "i" } },
+        { panCardNumber: { $regex: searchTerm, $options: "i" } },
+        { "borrowerProfile.businessName": { $regex: searchTerm, $options: "i" } },
+      ];
+      if (query.$or) {
+        query.$and = [{ $or: query.$or }, { $or: searchConditions }];
+        delete query.$or;
+      } else {
+        query.$or = searchConditions;
+      }
+    }
+
+    const sort = {};
+    sort[sortBy] = sortOrder === "asc" ? 1 : -1;
+
+    const options = {
+      sort,
+      select: "-password -deviceTokens",
+    };
+
+    const { data: borrowers, pagination } = await paginateQuery(
+      User,
+      query,
+      page,
+      limit,
+      options
+    );
+
+    // Fetch live loan statistics for the retrieved borrowers
+    const borrowerIds = borrowers.map((b) => b._id);
+    const aadhars = borrowers.map((b) => b.aadharCardNo).filter(Boolean);
+    const mobiles = borrowers.map((b) => b.mobileNo).filter(Boolean);
+
+    const loans = await Loan.find({
+      $or: [
+        { borrowerId: { $in: borrowerIds } },
+        { aadhaarNumber: { $in: aadhars } },
+        { mobileNumber: { $in: mobiles } },
+      ],
+    })
+      .select("borrowerId aadhaarNumber mobileNumber amount paymentStatus remainingAmount totalPaid lenderId")
+      .populate("lenderId", "userName companyName")
+      .lean();
+
+    const formattedBorrowers = borrowers.map((borrower) => {
+      const bLoans = loans.filter(
+        (l) =>
+          (l.borrowerId && l.borrowerId.toString() === borrower._id.toString()) ||
+          (borrower.aadharCardNo && l.aadhaarNumber === borrower.aadharCardNo) ||
+          (borrower.mobileNo && l.mobileNumber === borrower.mobileNo)
+      );
+
+      const totalLoansCount = bLoans.length;
+      const totalLoanAmount = bLoans.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+      const totalPaidAmount = bLoans.reduce((sum, l) => sum + (Number(l.totalPaid) || 0), 0);
+      const totalRemainingAmount = bLoans.reduce((sum, l) => sum + (Number(l.remainingAmount) || 0), 0);
+      const hasActiveLoan = bLoans.some((l) => l.paymentStatus === "pending" || l.paymentStatus === "part paid");
+      const hasOverdueLoan = bLoans.some((l) => l.paymentStatus === "overdue");
+
+      return {
+        ...(borrower.toObject ? borrower.toObject() : borrower),
+        totalLoansCount,
+        totalLoanAmount,
+        totalPaidAmount,
+        totalRemainingAmount,
+        hasActiveLoan,
+        hasOverdueLoan,
+        loanCount: totalLoansCount,
+      };
+    });
+
+    // Global summary across all borrowers
+    const totalBorrowersCount = await User.countDocuments({ roleId: 2 });
+    const verifiedKycCount = await User.countDocuments({ roleId: 2, "digilockerKyc.isVerified": true });
+    
+    // Overall loan stats
+    const allBorrowerLoans = await Loan.find({}).select("amount totalPaid remainingAmount paymentStatus").lean();
+    const totalBorrowedBook = allBorrowerLoans.reduce((sum, l) => sum + (Number(l.amount) || 0), 0);
+    const totalOutstandingBook = allBorrowerLoans.reduce((sum, l) => sum + (Number(l.remainingAmount) || 0), 0);
+    const activeLoansTotal = allBorrowerLoans.filter((l) => l.paymentStatus === "pending" || l.paymentStatus === "part paid").length;
+    const overdueLoansTotal = allBorrowerLoans.filter((l) => l.paymentStatus === "overdue").length;
+
+    const summary = {
+      totalBorrowers: totalBorrowersCount,
+      verifiedKycCount,
+      totalBorrowedBook,
+      totalOutstandingBook,
+      activeLoansTotal,
+      overdueLoansTotal,
+    };
+
+    return res.status(200).json({
+      success: true,
+      message: "Borrowers list fetched successfully",
+      summary,
+      count: formattedBorrowers.length,
+      data: formattedBorrowers,
+      pagination,
+    });
+  } catch (error) {
+    console.error("Error in getAdminBorrowers:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching borrowers",
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   createPlan,
   editPlan,
@@ -1379,4 +1520,6 @@ module.exports = {
   impersonateLender,
   seedInitialDurationPlans,
   getLenderSubscriptionHistory,
+  getAdminBorrowers,
 };
+
