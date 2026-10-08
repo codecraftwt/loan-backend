@@ -39,6 +39,11 @@ const loanApplicationSchema = new mongoose.Schema(
       type: Number,
       default: 10.5,
     },
+    repaymentType: {
+      type: String,
+      enum: ["EMI", "ONE_TIME"],
+      default: "EMI",
+    },
     status: {
       type: String,
       enum: ["pending", "accepted", "rejected", "auto_rejected"],
@@ -71,6 +76,42 @@ const loanApplicationSchema = new mongoose.Schema(
       verifiedAt: { type: Date, default: null },
       disbursedAt: { type: Date, default: null },
       disbursalMode: { type: String, default: "direct" },
+    },
+
+    // Loan Agreement & E-Signatures
+    agreement: {
+      documentId: { type: String, default: null },
+      agreementHtml: { type: String, default: null },
+      status: {
+        type: String,
+        enum: ["pending_lender", "lender_signed", "borrower_signed", "fully_executed"],
+        default: "pending_lender",
+      },
+      sanctionTerms: {
+        amount: Number,
+        repaymentType: { type: String, enum: ["EMI", "ONE_TIME"], default: "EMI" },
+        interestRate: Number,
+        tenureMonths: Number,
+        processingFee: { type: Number, default: 0 },
+        monthlyEmi: { type: Number, default: 0 },
+        totalInterest: { type: Number, default: 0 },
+        totalPayable: { type: Number, default: 0 },
+        maturityDate: Date,
+        firstDueDate: Date,
+      },
+      lenderSignature: {
+        signatureData: { type: String, default: null },
+        signedBy: { type: String, default: null },
+        signedAt: { type: Date, default: null },
+        ipAddress: { type: String, default: null },
+      },
+      borrowerSignature: {
+        signatureData: { type: String, default: null },
+        signedBy: { type: String, default: null },
+        signedAt: { type: Date, default: null },
+        ipAddress: { type: String, default: null },
+      },
+      executedAt: { type: Date, default: null },
     },
 
     // Immutable snapshots at the time of application submission

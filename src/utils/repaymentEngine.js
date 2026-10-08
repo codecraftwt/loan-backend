@@ -25,6 +25,8 @@ exports.generateRepaymentSchedule = ({
   frequency = "monthly",
   startDate = new Date(),
   firstDueDate = null,
+  customTotalInterest = null,
+  customMaturityDate = null,
 }) => {
   const P = Number(principal);
   const R = Number(annualInterestRate) || 12;
@@ -39,11 +41,16 @@ exports.generateRepaymentSchedule = ({
 
   // ─── Case 1: One-Time / Bullet Repayment ───
   if (repaymentType === "one-time") {
-    const totalInterest = Math.round((P * R * (N / 12)) / 100);
+    const totalInterest =
+      customTotalInterest !== null && customTotalInterest !== undefined && !isNaN(customTotalInterest)
+        ? Number(customTotalInterest)
+        : Math.round((P * R * (N / 12)) / 100);
     const totalRepayment = P + totalInterest;
 
-    const maturityDate = new Date(start);
-    maturityDate.setMonth(maturityDate.getMonth() + N);
+    let maturityDate = customMaturityDate ? new Date(customMaturityDate) : new Date(start);
+    if (!customMaturityDate) {
+      maturityDate.setMonth(maturityDate.getMonth() + N);
+    }
 
     const installments = [
       {

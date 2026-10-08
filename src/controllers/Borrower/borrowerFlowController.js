@@ -394,6 +394,7 @@ exports.submitLoanApplications = async (req, res) => {
       purpose,
       tenureMonths,
       requestedRate,
+      repaymentType,
       notes,
     } = req.body;
 
@@ -536,6 +537,8 @@ exports.submitLoanApplications = async (req, res) => {
       servicesOffered: lender.lenderProfile?.servicesOffered || [],
     };
 
+    const validRepaymentType = repaymentType === "ONE_TIME" ? "ONE_TIME" : "EMI";
+
     const application = new LoanApplication({
       applicationGroupId,
       borrowerId,
@@ -544,6 +547,7 @@ exports.submitLoanApplications = async (req, res) => {
       purpose: purpose || "Working Capital",
       tenureMonths: Number(tenureMonths) || 12,
       requestedRate: Number(requestedRate) || lender.lenderProfile?.minInterestRate || 10.5,
+      repaymentType: validRepaymentType,
       status: "pending",
       notes: notes || "",
       borrowerSnapshot,
@@ -1094,6 +1098,157 @@ exports.getBorrowerDashboardStats = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error while fetching stats",
+      error: error.message,
+    });
+  }
+};
+
+// ─── 12. Sign Loan Agreement by Borrower ───
+exports.signBorrowerAgreement = async (req, res) => {
+  try {
+    const borrowerId = req.user?._id || req.user?.id;
+    const { id } = req.params;
+    const { signatureData, signedBy } = req.body;
+
+    if (!signatureData) {
+      return res.status(400).json({
+        success: false,
+        message: "Digital signature is required to sign the loan agreement.",
+      });
+    }
+
+    const application = await LoanApplication.findById(id).populate("lenderId", "userName companyName email mobileNo");
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: "Loan application not found.",
+      });
+    }
+
+    if (borrowerId && application.borrowerId && application.borrowerId.toString() !== borrowerId.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: "Unauthorized access to this loan application.",
+      });
+    }
+
+    if (application.status !== "accepted") {
+      return res.status(400).json({
+        success: false,
+        message: "This application cannot be signed because it has not been sanctioned/accepted by the lender.",
+      });
+    }
+
+    const clientIp = req.ip || req.connection?.remoteAddress || "127.0.0.1";
+    const borrower = borrowerId ? await User.findById(borrowerId) : null;
+    const borrowerName = signedBy || borrower?.userName || application.borrowerSnapshot?.userName || "Borrower";
+
+    const borrowerSignature = {
+      signatureData,
+      signedBy: borrowerName,
+      signedAt: new Date(),
+      ipAddress: clientIp,
+    };
+
+    const existingAgreement = application.agreement
+      ? application.agreement.toObject
+        ? application.agreement.toObject()
+        : application.agreement
+      : {};
+
+    application.agreement = {
+      ...existingAgreement,
+      status: "fully_executed",
+      borrowerSignature,
+      executedAt: new Date(),
+    };
+
+    if (!application.disbursalVerification?.otp) {
+      application.disbursalVerification = {
+        otp: Math.floor(100000 + Math.random() * 900000).toString(),
+        otpExpiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        otpAttempts: 0,
+        isVerified: false,
+        verifiedAt: null,
+        disbursedAt: null,
+        disbursalMode: "direct",
+      };
+    }
+
+    await application.save();
+
+    // Update corresponding Loan record if present
+    await Loan.findOneAndUpdate(
+      { applicationId: application._id },
+      {
+        $set: {
+          agreement: application.agreement?.documentId || "AGREEMENT_EXECUTED",
+          digitalSignature: signatureData,
+          borrowerAcceptanceStatus: "accepted",
+        },
+      }
+    );
+
+    // Notify the Lender
+    const lenderId = application.lenderId?._id || application.lenderId;
+    if (lenderId) {
+      await Notification.create({
+        userId: lenderId,
+        title: "Loan Agreement Digitally Signed! ✍️",
+        message: `${borrowerName} has reviewed and digitally signed the loan agreement for ₹${Number(
+          application.amount
+        ).toLocaleString("en-IN")}. You may now verify OTP and disburse funds.`,
+        type: "agreement_signed",
+        metadata: {
+          applicationId: application._id,
+          borrowerName,
+          amount: application.amount,
+        },
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Loan Agreement successfully countersigned and fully executed!",
+      agreement: application.agreement,
+      application,
+    });
+  } catch (error) {
+    console.error("Error signing borrower agreement:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while signing agreement",
+      error: error.message,
+    });
+  }
+};
+
+// ─── 13. Get Single Application Agreement ───
+exports.getApplicationAgreement = async (req, res) => {
+  try {
+    const userId = req.user?._id || req.user?.id;
+    const { id } = req.params;
+
+    const application = await LoanApplication.findById(id).populate("lenderId borrowerId");
+
+    if (!application) {
+      return res.status(404).json({
+        success: false,
+        message: "Agreement not found.",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      agreement: application.agreement,
+      application,
+    });
+  } catch (error) {
+    console.error("Error fetching application agreement:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while fetching agreement",
       error: error.message,
     });
   }

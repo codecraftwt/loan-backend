@@ -7,6 +7,7 @@ const {
   allocatePaymentToLoan,
 } = require("../../utils/repaymentEngine");
 const { expireOldPendingApplications } = require("../Borrower/borrowerFlowController");
+const { buildAgreementDocument } = require("../../services/agreementService");
 
 // ─── 1. Get Connected Borrowers (ONLY borrowers whose loan requests were accepted by this particular lender) ───
 exports.getAvailableBorrowers = async (req, res) => {
@@ -370,10 +371,72 @@ exports.acceptLoanRequest = async (req, res) => {
     const lender = await User.findById(lenderId);
     const lenderName = lender?.companyName || lender?.userName || "Institutional Lender";
 
-    // 1. Mark target application as accepted
+    // 1. Extract Sanction Terms & Digital Signature
+    const sanctionedAmount = Number(req.body?.amount) || targetApplication.amount;
+    const repaymentType = req.body?.repaymentType === "ONE_TIME" ? "ONE_TIME" : "EMI";
+    const annualInterestRate =
+      Number(req.body?.interestRate) || targetApplication.requestedRate || 12;
+    const tenureMonths =
+      Number(req.body?.tenureMonths) || targetApplication.tenureMonths || 12;
+    const processingFee = Number(req.body?.processingFee) || 0;
+    const signatureData = req.body?.signatureData || null;
+    const signedBy = req.body?.signedBy || lenderName;
+    const clientIp = req.ip || req.connection?.remoteAddress || "127.0.0.1";
+
+    let monthlyEmi = 0;
+    let totalInterest = 0;
+    let totalPayable = sanctionedAmount;
+    const maturityDate = new Date();
+    maturityDate.setMonth(maturityDate.getMonth() + tenureMonths);
+    const firstDueDate = new Date();
+    firstDueDate.setDate(firstDueDate.getDate() + 30);
+
+    if (repaymentType === "EMI") {
+      const r = (annualInterestRate / 100) / 12;
+      monthlyEmi = Math.round((sanctionedAmount * r * Math.pow(1 + r, tenureMonths)) / (Math.pow(1 + r, tenureMonths) - 1));
+      totalPayable = monthlyEmi * tenureMonths;
+      totalInterest = totalPayable - sanctionedAmount;
+    } else {
+      if (req.body?.manualInterestAmount !== undefined && req.body?.manualInterestAmount !== null && !isNaN(req.body?.manualInterestAmount)) {
+        totalInterest = Math.round(Number(req.body.manualInterestAmount));
+        totalPayable = sanctionedAmount + totalInterest;
+      } else {
+        totalInterest = Math.round(sanctionedAmount * (annualInterestRate / 100) * (tenureMonths / 12));
+        totalPayable = sanctionedAmount + totalInterest;
+      }
+      monthlyEmi = 0;
+    }
+
+    const docId = `AGR-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+    const sanctionTerms = {
+      amount: sanctionedAmount,
+      repaymentType,
+      interestRate: annualInterestRate,
+      tenureMonths,
+      processingFee,
+      monthlyEmi,
+      totalInterest,
+      totalPayable,
+      maturityDate,
+      firstDueDate,
+    };
+
+    const lenderSignature = {
+      signatureData,
+      signedBy,
+      signedAt: new Date(),
+      ipAddress: clientIp,
+    };
+
+    // 2. Mark target application as accepted with Agreement
     const initialDisbursalOtp = Math.floor(100000 + Math.random() * 900000).toString();
     const initialOtpExpiry = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
 
+    targetApplication.amount = sanctionedAmount;
+    targetApplication.repaymentType = repaymentType;
+    targetApplication.requestedRate = annualInterestRate;
+    targetApplication.tenureMonths = tenureMonths;
     targetApplication.status = "accepted";
     targetApplication.acceptedAt = new Date();
     targetApplication.actionTakenAt = new Date();
@@ -386,9 +449,17 @@ exports.acceptLoanRequest = async (req, res) => {
       disbursedAt: null,
       disbursalMode: "direct",
     };
+    targetApplication.agreement = {
+      documentId: docId,
+      status: "lender_signed",
+      sanctionTerms,
+      lenderSignature,
+      borrowerSignature: null,
+      executedAt: null,
+    };
     await targetApplication.save();
 
-    // 2. ATOMIC AUTO-REJECTION of ALL other pending applications for this borrower
+    // 3. ATOMIC AUTO-REJECTION of ALL other pending applications for this borrower
     const autoRejectQuery = {
       borrowerId: targetApplication.borrowerId,
       _id: { $ne: targetApplication._id },
@@ -405,24 +476,21 @@ exports.acceptLoanRequest = async (req, res) => {
 
     const autoRejectedCount = autoRejectedResult.modifiedCount || 0;
 
-    // 3. Auto-generate active Loan facility and repayment schedule
+    // 4. Auto-generate active Loan facility and repayment schedule
     const borrower = await User.findById(targetApplication.borrowerId);
-    const repaymentType = req.body?.repaymentType || "installment";
-    const calculationMethod = req.body?.calculationMethod || "reducing";
-    const annualInterestRate =
-      Number(req.body?.interestRate) || targetApplication.requestedRate || 12;
-    const tenureMonths =
-      Number(req.body?.tenureMonths) || targetApplication.tenureMonths || 12;
-    const firstDueDate = req.body?.firstDueDate || null;
+    const engineRepaymentType = repaymentType === "ONE_TIME" ? "one-time" : "installment";
+    const calculationMethod = repaymentType === "ONE_TIME" ? "bullet" : "reducing";
 
     const scheduleData = generateRepaymentSchedule({
-      principal: targetApplication.amount,
+      principal: sanctionedAmount,
       annualInterestRate,
       tenureMonths,
-      repaymentType,
+      repaymentType: engineRepaymentType,
       calculationMethod,
       startDate: new Date(),
       firstDueDate,
+      customTotalInterest: repaymentType === "ONE_TIME" ? totalInterest : null,
+      customMaturityDate: repaymentType === "ONE_TIME" ? maturityDate : null,
     });
 
     let createdLoan = await Loan.findOne({ applicationId: targetApplication._id });
@@ -438,7 +506,7 @@ exports.acceptLoanRequest = async (req, res) => {
           borrower?.address || targetApplication.borrowerSnapshot?.address || "Address",
         aadhaarNumber:
           borrower?.aadharCardNo || targetApplication.borrowerSnapshot?.aadharCardNo || "",
-        amount: targetApplication.amount,
+        amount: sanctionedAmount,
         purpose: targetApplication.purpose || "Commercial Loan Facility",
         dealName: `${targetApplication.purpose || "Loan"} - ${
           borrower?.companyName || borrower?.userName || "Borrower"
@@ -453,25 +521,25 @@ exports.acceptLoanRequest = async (req, res) => {
           disbursedAt: null,
           disbursalMode: "direct",
         },
-        repaymentType: scheduleData.repaymentType,
-        repaymentMethod: scheduleData.calculationMethod,
-        interestRate: scheduleData.annualInterestRate,
-        tenureMonths: scheduleData.tenureMonths,
-        monthlyEmi: scheduleData.monthlyEmi,
-        totalRepaymentExpected: scheduleData.totalRepayment,
-        totalInterestExpected: scheduleData.totalInterest,
-        remainingAmount: scheduleData.totalRepayment,
+        repaymentType: engineRepaymentType,
+        repaymentMethod: calculationMethod,
+        interestRate: annualInterestRate,
+        tenureMonths: tenureMonths,
+        monthlyEmi: monthlyEmi,
+        totalRepaymentExpected: totalPayable,
+        totalInterestExpected: totalInterest,
+        remainingAmount: totalPayable,
         totalPaid: 0,
         installments: scheduleData.installments,
         installmentPlan: {
           totalInstallments: scheduleData.installments.length,
           paidInstallments: 0,
-          installmentAmount: scheduleData.monthlyEmi || scheduleData.totalRepayment,
+          installmentAmount: monthlyEmi || totalPayable,
           nextDueDate: scheduleData.installments[0]?.dueDate || null,
           installmentFrequency: "monthly",
         },
         loanStartDate: new Date(),
-        loanEndDate: scheduleData.maturityDate,
+        loanEndDate: maturityDate,
         paymentStatus: "pending",
         borrowerAcceptanceStatus: "accepted",
         loanMode: "online",

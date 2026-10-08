@@ -1,50 +1,140 @@
-const generateLoanAgreement = (loan) => {
-  const {
-    name,
-    aadhaarNumber,
-    amount,
-    loanStartDate,
-    loanEndDate,
-    purpose,
-    lenderId,
-  } = loan;
+/**
+ * Professional Loan Facility Agreement & E-Sign Document Generator
+ */
 
-  return `
-      LOAN AGREEMENT
-  
-      This agreement is made between the lender and borrower for a loan transaction, with the purpose of tracking the loan and providing updates.
-  
-      The details of the loan are as follows:
-  
-      Lender: ${lenderId}
-      Aadhaar Number: ${aadhaarNumber}
-      Loan Amount: ₹${amount}
-      Purpose of Loan: ${purpose}
-      Loan Start Date: ${loanStartDate.toLocaleDateString()}
-      Loan End Date: ${loanEndDate.toLocaleDateString()}
-  
-      TERMS AND CONDITIONS:
-  
-      1. This platform only tracks the loan progress, sends notifications, and provides updates.
-      2. The platform is **NOT RESPONSIBLE** for loan payments, repayments, or any other financial transactions related to this loan.
-      3. The borrower and lender should handle all financial aspects of the loan outside of this platform.
-      4. The platform will provide timely notifications related to the loan status, upcoming due dates, and any changes in the loan terms.
-      5. Any disputes related to payments, loan terms, or actions taken by either party must be resolved between the borrower and lender directly.
-  
-      PLATFORM LIMITATIONS:
-  
-      - The platform does **NOT GUARANTEE** repayment or enforce the loan terms.
-      - The platform is not responsible for tracking payment schedules or maintaining records beyond providing basic loan status updates.
-      - All financial transactions, including loan disbursement, repayments, and interest rates, should be discussed and agreed upon between the lender and borrower directly.
-  
-      By accepting this loan, both the lender and borrower acknowledge the role of this platform in tracking and notifying but not engaging in any financial aspects of the loan.
-  
-      Signed by:
-      [Signature of Borrower]
-      [Signature of Lender]
-  
-      Date: ${new Date().toLocaleDateString()}
-    `;
+const formatINR = (val) => {
+  if (!val || isNaN(val)) return "₹0";
+  const num = Number(val);
+  return `₹${num.toLocaleString("en-IN")}`;
 };
 
-module.exports = { generateLoanAgreement };
+const formatDate = (date) => {
+  if (!date) return "Pending Execution";
+  return new Date(date).toLocaleDateString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const formatDateTime = (date) => {
+  if (!date) return "Pending Execution";
+  return new Date(date).toLocaleString("en-IN", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+/**
+ * Generate a comprehensive, legally compliant HTML & Plaintext agreement document
+ */
+const buildAgreementDocument = ({
+  documentId,
+  application,
+  lender,
+  borrower,
+  sanctionTerms,
+  lenderSignature,
+  borrowerSignature,
+}) => {
+  const docId =
+    documentId ||
+    `AGR-${new Date().getFullYear()}-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+
+  const principal = Number(sanctionTerms?.amount || application?.amount || 0);
+  const interestRate = Number(sanctionTerms?.interestRate || application?.requestedRate || 12);
+  const tenureMonths = Number(sanctionTerms?.tenureMonths || application?.tenureMonths || 12);
+  const repaymentType = sanctionTerms?.repaymentType || application?.repaymentType || "EMI";
+  const processingFee = Number(sanctionTerms?.processingFee || 0);
+  const monthlyEmi = Number(sanctionTerms?.monthlyEmi || 0);
+  const totalInterest = Number(sanctionTerms?.totalInterest || 0);
+  const totalPayable = Number(sanctionTerms?.totalPayable || principal + totalInterest);
+  const maturityDate = sanctionTerms?.maturityDate || null;
+
+  const lenderName =
+    lender?.companyName ||
+    lender?.userName ||
+    application?.lenderSnapshot?.companyName ||
+    application?.lenderSnapshot?.userName ||
+    "Financing Entity";
+
+  const borrowerName =
+    borrower?.userName ||
+    application?.borrowerSnapshot?.userName ||
+    "Borrower";
+
+  const borrowerBusiness =
+    borrower?.borrowerProfile?.businessName ||
+    borrower?.companyName ||
+    application?.borrowerSnapshot?.businessName ||
+    borrowerName;
+
+  const borrowerPan =
+    borrower?.panCardNumber ||
+    application?.borrowerSnapshot?.panCardNumber ||
+    "Verified PAN";
+
+  const borrowerAadhaar =
+    borrower?.aadharCardNo ||
+    application?.borrowerSnapshot?.aadharCardNo ||
+    "Verified UIDAI";
+
+  const borrowerAddress =
+    borrower?.address ||
+    application?.borrowerSnapshot?.address ||
+    [
+      borrower?.city || application?.borrowerSnapshot?.city,
+      borrower?.state || application?.borrowerSnapshot?.state,
+    ]
+      .filter(Boolean)
+      .join(", ") ||
+    "Verified Address";
+
+  const agreementDate = new Date();
+
+  return {
+    documentId: docId,
+    generatedAt: agreementDate,
+    terms: {
+      principal,
+      interestRate,
+      tenureMonths,
+      repaymentType,
+      processingFee,
+      monthlyEmi,
+      totalInterest,
+      totalPayable,
+      maturityDate,
+    },
+    parties: {
+      lender: {
+        name: lenderName,
+        email: lender?.email || application?.lenderSnapshot?.email || "",
+        mobileNo: lender?.mobileNo || application?.lenderSnapshot?.mobileNo || "",
+      },
+      borrower: {
+        name: borrowerName,
+        businessName: borrowerBusiness,
+        pan: borrowerPan,
+        aadhaar: borrowerAadhaar,
+        address: borrowerAddress,
+        email: borrower?.email || application?.borrowerSnapshot?.email || "",
+        mobileNo: borrower?.mobileNo || application?.borrowerSnapshot?.mobileNo || "",
+      },
+    },
+    signatures: {
+      lender: lenderSignature || null,
+      borrower: borrowerSignature || null,
+    },
+  };
+};
+
+module.exports = {
+  buildAgreementDocument,
+  formatINR,
+  formatDate,
+  formatDateTime,
+};

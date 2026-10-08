@@ -15,6 +15,8 @@ const {
   getBorrowerDashboardStats,
   getBorrowerLoansPortfolio,
   getBorrowerLoanById,
+  signBorrowerAgreement,
+  getApplicationAgreement,
 } = require("../../controllers/Borrower/borrowerFlowController");
 
 // Lenders marketplace for borrowers
@@ -26,6 +28,8 @@ router.get("/favorites", authenticateUser, getFavoriteLenders);
 // Multi-lender application submission (max 8) & tracking
 router.post("/applications", authenticateUser, submitLoanApplications);
 router.get("/my-applications", authenticateUser, getMyApplications);
+router.post("/applications/:id/sign-agreement", authenticateUser, signBorrowerAgreement);
+router.get("/applications/:id/agreement", authenticateUser, getApplicationAgreement);
 
 // In-app notifications
 router.get("/notifications", authenticateUser, getBorrowerNotifications);
