@@ -44,6 +44,12 @@ const loanApplicationSchema = new mongoose.Schema(
       enum: ["EMI", "ONE_TIME"],
       default: "EMI",
     },
+    // Collateral or asset pledged by borrower as security (e.g. Gold, Bike, Property, etc.)
+    pledgedSecurity: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     status: {
       type: String,
       enum: ["pending", "accepted", "rejected", "auto_rejected"],
@@ -98,6 +104,7 @@ const loanApplicationSchema = new mongoose.Schema(
         totalPayable: { type: Number, default: 0 },
         maturityDate: Date,
         firstDueDate: Date,
+        pledgedSecurity: { type: String, default: "" },
       },
       lenderSignature: {
         signatureData: { type: String, default: null },

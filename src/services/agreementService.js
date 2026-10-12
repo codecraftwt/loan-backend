@@ -53,6 +53,7 @@ const buildAgreementDocument = ({
   const totalInterest = Number(sanctionTerms?.totalInterest || 0);
   const totalPayable = Number(sanctionTerms?.totalPayable || principal + totalInterest);
   const maturityDate = sanctionTerms?.maturityDate || null;
+  const pledgedSecurity = sanctionTerms?.pledgedSecurity || application?.pledgedSecurity || "";
 
   const lenderName =
     lender?.companyName ||
@@ -108,6 +109,7 @@ const buildAgreementDocument = ({
       totalInterest,
       totalPayable,
       maturityDate,
+      pledgedSecurity,
     },
     parties: {
       lender: {

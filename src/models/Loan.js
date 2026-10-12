@@ -47,6 +47,12 @@ const loanSchema = new mongoose.Schema(
       type: String,
       default: "Commercial Real Estate Loan",
     },
+    // Collateral / Asset pledged as security (e.g. Gold, Bike, Property, etc.)
+    pledgedSecurity: {
+      type: String,
+      default: "",
+      trim: true,
+    },
 
     // Pipeline & Workflow Stage
     pipelineStage: {

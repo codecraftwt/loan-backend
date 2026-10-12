@@ -396,6 +396,7 @@ exports.submitLoanApplications = async (req, res) => {
       requestedRate,
       repaymentType,
       notes,
+      pledgedSecurity,
     } = req.body;
 
     // 1. First expire any pending requests older than 48 hours
@@ -550,6 +551,7 @@ exports.submitLoanApplications = async (req, res) => {
       repaymentType: validRepaymentType,
       status: "pending",
       notes: notes || "",
+      pledgedSecurity: (pledgedSecurity || "").trim(),
       borrowerSnapshot,
       lenderSnapshot,
     });

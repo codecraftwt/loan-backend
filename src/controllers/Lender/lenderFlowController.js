@@ -420,6 +420,7 @@ exports.acceptLoanRequest = async (req, res) => {
       totalPayable,
       maturityDate,
       firstDueDate,
+      pledgedSecurity: targetApplication.pledgedSecurity || req.body?.pledgedSecurity || "",
     };
 
     const lenderSignature = {
@@ -508,6 +509,7 @@ exports.acceptLoanRequest = async (req, res) => {
           borrower?.aadharCardNo || targetApplication.borrowerSnapshot?.aadharCardNo || "",
         amount: sanctionedAmount,
         purpose: targetApplication.purpose || "Commercial Loan Facility",
+        pledgedSecurity: targetApplication.pledgedSecurity || "",
         dealName: `${targetApplication.purpose || "Loan"} - ${
           borrower?.companyName || borrower?.userName || "Borrower"
         }`,
