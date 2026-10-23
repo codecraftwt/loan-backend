@@ -1195,19 +1195,23 @@ exports.signBorrowerAgreement = async (req, res) => {
     // Notify the Lender
     const lenderId = application.lenderId?._id || application.lenderId;
     if (lenderId) {
-      await Notification.create({
-        userId: lenderId,
-        title: "Loan Agreement Digitally Signed! ✍️",
-        message: `${borrowerName} has reviewed and digitally signed the loan agreement for ₹${Number(
-          application.amount
-        ).toLocaleString("en-IN")}. You may now verify OTP and disburse funds.`,
-        type: "agreement_signed",
-        metadata: {
-          applicationId: application._id,
-          borrowerName,
-          amount: application.amount,
-        },
-      });
+      try {
+        await Notification.create({
+          userId: lenderId,
+          title: "Loan Agreement Digitally Signed! ✍️",
+          message: `${borrowerName} has reviewed and digitally signed the loan agreement for ₹${Number(
+            application.amount
+          ).toLocaleString("en-IN")}. You may now verify OTP and disburse funds.`,
+          type: "agreement_signed",
+          metadata: {
+            applicationId: application._id,
+            borrowerName,
+            amount: application.amount,
+          },
+        });
+      } catch (notifyErr) {
+        console.warn("Could not create agreement_signed notification:", notifyErr.message);
+      }
     }
 
     return res.status(200).json({

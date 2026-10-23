@@ -28,6 +28,7 @@ const notificationSchema = new mongoose.Schema(
         "loan_payment_confirmed",
         "loan_given",
         "loan_taken",
+        "agreement_signed",
         "info",
       ],
       default: "info",
