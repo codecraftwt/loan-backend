@@ -64,6 +64,11 @@ const loanApplicationSchema = new mongoose.Schema(
       type: Date,
       default: null,
     },
+    isAcceptedReadByBorrower: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
     actionTakenAt: {
       type: Date,
       default: null,

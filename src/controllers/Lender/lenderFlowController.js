@@ -441,6 +441,7 @@ exports.acceptLoanRequest = async (req, res) => {
     targetApplication.status = "accepted";
     targetApplication.acceptedAt = new Date();
     targetApplication.actionTakenAt = new Date();
+    targetApplication.isAcceptedReadByBorrower = false;
     targetApplication.disbursalVerification = {
       otp: initialDisbursalOtp,
       otpExpiresAt: initialOtpExpiry,

@@ -17,6 +17,7 @@ const {
   getBorrowerLoanById,
   signBorrowerAgreement,
   getApplicationAgreement,
+  markApplicationRead,
 } = require("../../controllers/Borrower/borrowerFlowController");
 
 // Lenders marketplace for borrowers
@@ -30,6 +31,8 @@ router.post("/applications", authenticateUser, submitLoanApplications);
 router.get("/my-applications", authenticateUser, getMyApplications);
 router.post("/applications/:id/sign-agreement", authenticateUser, signBorrowerAgreement);
 router.get("/applications/:id/agreement", authenticateUser, getApplicationAgreement);
+router.patch("/applications/:id/mark-read", authenticateUser, markApplicationRead);
+router.post("/applications/:id/mark-read", authenticateUser, markApplicationRead);
 
 // In-app notifications
 router.get("/notifications", authenticateUser, getBorrowerNotifications);

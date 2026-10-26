@@ -1078,8 +1078,12 @@ exports.getBorrowerDashboardStats = async (req, res) => {
       planExpiryDate: { $gt: now },
     });
 
-    // Find latest accepted loan if any
-    const latestAccepted = await LoanApplication.findOne({ borrowerId, status: "accepted" })
+    // Find latest unread accepted loan if any
+    const latestAccepted = await LoanApplication.findOne({
+      borrowerId,
+      status: "accepted",
+      isAcceptedReadByBorrower: { $ne: true },
+    })
       .populate("lenderId", "userName companyName email mobileNo lenderProfile")
       .sort({ acceptedAt: -1 });
 
@@ -1100,6 +1104,46 @@ exports.getBorrowerDashboardStats = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Server error while fetching stats",
+      error: error.message,
+    });
+  }
+};
+
+// ─── 11b. Mark Accepted Loan Application as Read by Borrower ───
+exports.markApplicationRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const borrowerId = req.user?._id || req.user?.id;
+
+    // Mark the specific application and all existing accepted applications for this borrower as read
+    // so older historical accepted applications do not queue up and reappear one after another
+    await LoanApplication.updateMany(
+      { borrowerId, status: "accepted" },
+      { $set: { isAcceptedReadByBorrower: true } }
+    );
+
+    // Also mark associated in-app notifications as read
+    await Notification.updateMany(
+      { userId: borrowerId, type: "loan_accepted" },
+      { $set: { isRead: true } }
+    );
+
+    if (id) {
+      await Notification.updateMany(
+        { userId: borrowerId, "metadata.applicationId": id },
+        { $set: { isRead: true } }
+      );
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Application accepted message marked as read",
+    });
+  } catch (error) {
+    console.error("Error marking application as read:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while marking application as read",
       error: error.message,
     });
   }
