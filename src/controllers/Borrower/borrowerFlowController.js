@@ -1242,7 +1242,7 @@ exports.signBorrowerAgreement = async (req, res) => {
       try {
         await Notification.create({
           userId: lenderId,
-          title: "Loan Agreement Digitally Signed! ✍️",
+          title: "Loan Agreement Digitally Signed",
           message: `${borrowerName} has reviewed and digitally signed the loan agreement for ₹${Number(
             application.amount
           ).toLocaleString("en-IN")}. You may now verify OTP and disburse funds.`,
