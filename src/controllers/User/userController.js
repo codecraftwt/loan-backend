@@ -228,6 +228,9 @@ const registerDeviceToken = async (req, res) => {
     }
 
     // Check if the deviceToken is already in the array
+    if (!Array.isArray(user.deviceTokens)) {
+      user.deviceTokens = [];
+    }
     if (!user.deviceTokens.includes(deviceToken)) {
       user.deviceTokens.push(deviceToken);
       await user.save();

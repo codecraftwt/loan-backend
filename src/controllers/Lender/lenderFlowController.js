@@ -8,6 +8,7 @@ const {
 } = require("../../utils/repaymentEngine");
 const { expireOldPendingApplications } = require("../Borrower/borrowerFlowController");
 const { buildAgreementDocument } = require("../../services/agreementService");
+const { sendPushToUser } = require("../../services/notificationService");
 
 // ─── 1. Get Connected Borrowers (ONLY borrowers whose loan requests were accepted by this particular lender) ───
 exports.getAvailableBorrowers = async (req, res) => {
@@ -614,6 +615,18 @@ exports.acceptLoanRequest = async (req, res) => {
 
     await Notification.insertMany(notificationsToCreate);
 
+    // Send real-time push notification to borrower
+    sendPushToUser(
+      targetApplication.borrowerId,
+      "Loan Application Accepted! 🎉",
+      `Great news! ${lenderName} has accepted your loan request of ₹${targetApplication.amount.toLocaleString("en-IN")}. Verification OTP generated.`,
+      {
+        type: "loan_accepted",
+        applicationId: targetApplication._id.toString(),
+        screen: "Notifications",
+      }
+    );
+
     return res.status(200).json({
       success: true,
       message: `You have successfully accepted the loan application for ₹${targetApplication.amount.toLocaleString(
@@ -696,6 +709,18 @@ exports.initiateLoanDisbursalOtp = async (req, res) => {
         expiresAt: otpExpiresAt,
       },
     });
+
+    // Send real-time push notification with OTP
+    sendPushToUser(
+      borrowerId,
+      "Loan Disbursal Verification Code 🔐",
+      `Your 6-digit loan verification code is ${otp}. Share with ${lenderName} to confirm disbursal.`,
+      {
+        type: "disbursal_otp",
+        otp,
+        screen: "Notifications",
+      }
+    );
 
     return res.status(200).json({
       success: true,
@@ -852,6 +877,18 @@ exports.verifyLoanDisbursalOtp = async (req, res) => {
       },
     });
 
+    // Send real-time push notification to borrower
+    sendPushToUser(
+      borrowerId,
+      "Loan Disbursed & Facility Active! 🚀",
+      `Congratulations! ${lenderName} has verified your OTP and disbursed your loan facility.`,
+      {
+        type: "loan_disbursed",
+        loanId: (loan?._id || application?._id || "").toString(),
+        screen: "Notifications",
+      }
+    );
+
     return res.status(200).json({
       success: true,
       message: "Borrower OTP verified successfully! The loan facility is now active and disbursed.",
@@ -913,6 +950,18 @@ exports.rejectLoanRequest = async (req, res) => {
         rejectionReason: targetApplication.rejectionReason,
       },
     });
+
+    // Send real-time push notification to borrower
+    sendPushToUser(
+      targetApplication.borrowerId,
+      "Loan Application Declined",
+      `${lenderName} has declined your loan request.${reason ? " Reason: " + reason : ""}`,
+      {
+        type: "loan_rejected",
+        applicationId: targetApplication._id.toString(),
+        screen: "Notifications",
+      }
+    );
 
     return res.status(200).json({
       success: true,
@@ -1298,6 +1347,18 @@ exports.recordLoanPayment = async (req, res) => {
           transactionReference,
         },
       });
+
+      // Send real-time push notification to borrower
+      sendPushToUser(
+        loan.borrowerId,
+        "Payment Confirmed! 💳",
+        `${lenderName} recorded a payment of ₹${Number(paymentAmount).toLocaleString("en-IN")}.`,
+        {
+          type: "loan_payment_confirmed",
+          loanId: loan._id.toString(),
+          screen: "Notifications",
+        }
+      );
     }
 
     return res.status(200).json({

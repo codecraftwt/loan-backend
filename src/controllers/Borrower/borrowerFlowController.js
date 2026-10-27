@@ -3,6 +3,7 @@ const LoanApplication = require("../../models/LoanApplication");
 const Notification = require("../../models/Notification");
 const Loan = require("../../models/Loan");
 const Rating = require("../../models/Rating");
+const { sendPushToUser } = require("../../services/notificationService");
 
 // ─── 1. Get Available Lenders (with interest rates, services, and history) ───
 exports.getAvailableLenders = async (req, res) => {
@@ -571,6 +572,18 @@ exports.submitLoanApplications = async (req, res) => {
         borrowerName: borrower.userName,
       },
     });
+
+    // Send real-time push notification to lender device
+    sendPushToUser(
+      lender._id,
+      "New Loan Application Received",
+      `New application of ₹${Number(amount).toLocaleString("en-IN")} received from ${borrower.userName}.`,
+      {
+        type: "loan_received",
+        applicationId: application._id.toString(),
+        screen: "Notifications",
+      }
+    );
 
     return res.status(201).json({
       success: true,
@@ -1253,6 +1266,18 @@ exports.signBorrowerAgreement = async (req, res) => {
             amount: application.amount,
           },
         });
+
+        // Send real-time push notification to lender device
+        sendPushToUser(
+          lenderId,
+          "Loan Agreement Digitally Signed",
+          `${borrowerName} has reviewed and digitally signed the loan agreement.`,
+          {
+            type: "agreement_signed",
+            applicationId: application._id.toString(),
+            screen: "Notifications",
+          }
+        );
       } catch (notifyErr) {
         console.warn("Could not create agreement_signed notification:", notifyErr.message);
       }
