@@ -571,7 +571,7 @@ exports.acceptLoanRequest = async (req, res) => {
     const notificationsToCreate = [
       {
         userId: targetApplication.borrowerId,
-        title: "Loan Application Accepted! 🎉",
+        title: "Loan Application Accepted",
         message: `Great news! ${lenderName} has accepted your loan request of ₹${targetApplication.amount.toLocaleString(
           "en-IN"
         )} (${targetApplication.purpose}). Repayment terms configured.`,
@@ -586,7 +586,7 @@ exports.acceptLoanRequest = async (req, res) => {
       },
       {
         userId: targetApplication.borrowerId,
-        title: "Loan Disbursal Verification Code 🔐",
+        title: "Loan Disbursal Verification Code",
         message: `Your loan verification code is ${initialDisbursalOtp}. Share this 6-digit code with ${lenderName} to confirm disbursal and activate your loan facility.`,
         type: "disbursal_otp",
         metadata: {
@@ -618,7 +618,7 @@ exports.acceptLoanRequest = async (req, res) => {
     // Send real-time push notification to borrower
     sendPushToUser(
       targetApplication.borrowerId,
-      "Loan Application Accepted! 🎉",
+      "Loan Application Accepted",
       `Great news! ${lenderName} has accepted your loan request of ₹${targetApplication.amount.toLocaleString("en-IN")}. Verification OTP generated.`,
       {
         type: "loan_accepted",
@@ -698,7 +698,7 @@ exports.initiateLoanDisbursalOtp = async (req, res) => {
 
     await Notification.create({
       userId: borrowerId,
-      title: "Loan Disbursal Verification Code 🔐",
+      title: "Loan Disbursal Verification Code",
       message: `Your 6-digit loan disbursal verification code is ${otp}. Please share this code with ${lenderName} to confirm agreement and receive loan funds. Code is valid for 15 minutes.`,
       type: "disbursal_otp",
       metadata: {
@@ -713,7 +713,7 @@ exports.initiateLoanDisbursalOtp = async (req, res) => {
     // Send real-time push notification with OTP
     sendPushToUser(
       borrowerId,
-      "Loan Disbursal Verification Code 🔐",
+      "Loan Disbursal Verification Code",
       `Your 6-digit loan verification code is ${otp}. Share with ${lenderName} to confirm disbursal.`,
       {
         type: "disbursal_otp",
@@ -866,7 +866,7 @@ exports.verifyLoanDisbursalOtp = async (req, res) => {
 
     await Notification.create({
       userId: borrowerId,
-      title: "Loan Disbursed & Facility Active! 🚀",
+      title: "Loan Disbursed & Facility Active",
       message: `Congratulations! ${lenderName} has verified your OTP and successfully disbursed your loan facility of ₹${(loan?.amount || application?.amount || 0).toLocaleString("en-IN")}. Your EMI repayment schedule is now live.`,
       type: "loan_disbursed",
       metadata: {
@@ -880,7 +880,7 @@ exports.verifyLoanDisbursalOtp = async (req, res) => {
     // Send real-time push notification to borrower
     sendPushToUser(
       borrowerId,
-      "Loan Disbursed & Facility Active! 🚀",
+      "Loan Disbursed & Facility Active",
       `Congratulations! ${lenderName} has verified your OTP and disbursed your loan facility.`,
       {
         type: "loan_disbursed",
@@ -1333,7 +1333,7 @@ exports.recordLoanPayment = async (req, res) => {
 
       await Notification.create({
         userId: loan.borrowerId,
-        title: "Payment Confirmed! 💳",
+        title: "Payment Confirmed",
         message: `${lenderName} recorded a payment of ₹${Number(paymentAmount).toLocaleString(
           "en-IN"
         )} for loan (${loan.dealName || loan.purpose}). Remaining Balance: ₹${Number(
@@ -1351,7 +1351,7 @@ exports.recordLoanPayment = async (req, res) => {
       // Send real-time push notification to borrower
       sendPushToUser(
         loan.borrowerId,
-        "Payment Confirmed! 💳",
+        "Payment Confirmed",
         `${lenderName} recorded a payment of ₹${Number(paymentAmount).toLocaleString("en-IN")}.`,
         {
           type: "loan_payment_confirmed",

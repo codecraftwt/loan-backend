@@ -3,6 +3,17 @@ const User = require("../models/User");
 const Notification = require("../models/Notification");
 
 /**
+ * Helper to strip emojis and unicode icon symbols from text
+ */
+function stripEmojis(str) {
+  if (typeof str !== "string") return str;
+  return str
+    .replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{2300}-\u{23FF}\u{2B50}\u{1F000}-\u{1FFFF}]/gu, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/**
  * Persist notification to MongoDB for in-app notification inbox & bell
  */
 async function saveInAppNotification({ userId, title, message, type = "info", metadata = {} }) {
@@ -10,8 +21,8 @@ async function saveInAppNotification({ userId, title, message, type = "info", me
     if (userId) {
       await Notification.create({
         userId,
-        title,
-        message,
+        title: stripEmojis(title),
+        message: stripEmojis(message),
         type,
         metadata,
         isRead: false,
@@ -32,6 +43,9 @@ async function sendPushToUser(userId, title, body, data = {}) {
       return;
     }
 
+    const cleanTitle = stripEmojis(title);
+    const cleanBody = stripEmojis(body);
+
     // Convert all data values to strings (FCM requirement)
     const sanitizedData = {};
     if (data && typeof data === "object") {
@@ -45,11 +59,11 @@ async function sendPushToUser(userId, title, body, data = {}) {
 
     const notificationId = `${user.userName || "user"}_${Date.now()}`;
     const message = {
-      notification: { title, body },
+      notification: { title: cleanTitle, body: cleanBody },
       data: {
         ...sanitizedData,
-        title,
-        message: body,
+        title: cleanTitle,
+        message: cleanBody,
         notificationId,
       },
       android: {

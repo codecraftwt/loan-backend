@@ -4,6 +4,7 @@ const Notification = require("../../models/Notification");
 const Loan = require("../../models/Loan");
 const Rating = require("../../models/Rating");
 const { sendPushToUser } = require("../../services/notificationService");
+const { checkAndSendEmiPaymentReminders } = require("../../services/loanReminderService");
 
 // ─── 1. Get Available Lenders (with interest rates, services, and history) ───
 exports.getAvailableLenders = async (req, res) => {
@@ -906,6 +907,11 @@ exports.getBorrowerLoansPortfolio = async (req, res) => {
   try {
     const borrowerId = req.user._id;
     const { status, search } = req.query;
+
+    // Evaluate due tomorrow, due today, and overdue alerts asynchronously
+    checkAndSendEmiPaymentReminders(borrowerId).catch((e) =>
+      console.warn("[BorrowerPortfolio] Error checking EMI reminders:", e.message)
+    );
 
     const query = { borrowerId };
 

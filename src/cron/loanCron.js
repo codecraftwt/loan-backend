@@ -14,6 +14,17 @@ const {
   sendPendingLoanNotificationToBorrower,
   sendSubscriptionReminderNotification
 } = require('../services/notificationService');
+const { checkAndSendEmiPaymentReminders } = require('../services/loanReminderService');
+
+// Cron job to send EMI / Loan payment reminders (Due Tomorrow, Due Today, Overdue) at 9 AM and 6 PM daily
+cron.schedule('0 9,18 * * *', async () => {
+    try {
+        const stats = await checkAndSendEmiPaymentReminders();
+        console.log('[Cron] EMI payment reminders dispatched:', stats);
+    } catch (error) {
+        console.error('Error in EMI payment reminder cron job:', error);
+    }
+});
 
 // Cron job to auto-reject pending loan applications older than 48 hours (every 15 minutes)
 cron.schedule('*/15 * * * *', async () => {
