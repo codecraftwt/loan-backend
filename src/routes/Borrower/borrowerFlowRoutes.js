@@ -17,6 +17,7 @@ const {
   getBorrowerLoanById,
   signBorrowerAgreement,
   getApplicationAgreement,
+  downloadApplicationAgreement,
   markApplicationRead,
 } = require("../../controllers/Borrower/borrowerFlowController");
 
@@ -31,6 +32,7 @@ router.post("/applications", authenticateUser, submitLoanApplications);
 router.get("/my-applications", authenticateUser, getMyApplications);
 router.post("/applications/:id/sign-agreement", authenticateUser, signBorrowerAgreement);
 router.get("/applications/:id/agreement", authenticateUser, getApplicationAgreement);
+router.get("/applications/:id/agreement/download", downloadApplicationAgreement);
 router.patch("/applications/:id/mark-read", authenticateUser, markApplicationRead);
 router.post("/applications/:id/mark-read", authenticateUser, markApplicationRead);
 

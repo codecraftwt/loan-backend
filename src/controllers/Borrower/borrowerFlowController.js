@@ -5,6 +5,7 @@ const Loan = require("../../models/Loan");
 const Rating = require("../../models/Rating");
 const { sendPushToUser } = require("../../services/notificationService");
 const { checkAndSendEmiPaymentReminders } = require("../../services/loanReminderService");
+const { generateAgreementHtml, generateAgreementPdf } = require("../../services/agreementService");
 
 // ─── 1. Get Available Lenders (with interest rates, services, and history) ───
 exports.getAvailableLenders = async (req, res) => {
@@ -1320,10 +1321,61 @@ exports.getApplicationAgreement = async (req, res) => {
       });
     }
 
+    const agreement = application.agreement || {};
+    const terms = agreement.sanctionTerms || {};
+    const docId =
+      agreement.documentId ||
+      `AGR-${new Date().getFullYear()}-${String(application._id || 'COMMERCIAL').slice(-5).toUpperCase()}`;
+
+    const principal = Number(terms.amount || application.amount || 100000);
+    const rate = Number(terms.interestRate || application.requestedRate || 10.5);
+    const tenure = Number(terms.tenureMonths || application.tenureMonths || 12);
+    const repaymentType = terms.repaymentType || application.repaymentType || "EMI";
+    const isEmi = repaymentType === "EMI";
+
+    let calcMonthlyEmi = terms.monthlyEmi;
+    let calcTotalInterest = terms.totalInterest;
+    let calcTotalPayable = terms.totalPayable;
+
+    if (isEmi) {
+      if (!calcMonthlyEmi || calcMonthlyEmi === 0) {
+        const r = rate / 1200;
+        const n = tenure;
+        calcMonthlyEmi = Math.round((principal * r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1));
+      }
+      if (!calcTotalPayable || calcTotalPayable === principal) {
+        calcTotalPayable = calcMonthlyEmi * tenure;
+        calcTotalInterest = calcTotalPayable - principal;
+      } else if (!calcTotalInterest) {
+        calcTotalInterest = calcTotalPayable - principal;
+      }
+    } else {
+      if (!calcTotalInterest || calcTotalInterest === 0) {
+        calcTotalInterest = Math.round(principal * (rate / 100) * (tenure / 12));
+        calcTotalPayable = principal + calcTotalInterest;
+      }
+    }
+
+    const html = generateAgreementHtml(application);
+
     return res.status(200).json({
       success: true,
       agreement: application.agreement,
       application,
+      docId,
+      calculatedLedger: {
+        principal,
+        rate,
+        tenure,
+        repaymentType,
+        monthlyEmi: calcMonthlyEmi,
+        totalInterest: calcTotalInterest,
+        totalPayable: calcTotalPayable,
+        processingFee: terms.processingFee || 0,
+        pledgedSecurity: terms.pledgedCollateral || application.pledgedSecurity || "None (Unsecured Facility / Personal Guarantee)",
+      },
+      agreementHtml: html,
+      downloadUrl: `/api/borrower/applications/${application._id}/agreement/download`,
     });
   } catch (error) {
     console.error("Error fetching application agreement:", error);
@@ -1332,6 +1384,38 @@ exports.getApplicationAgreement = async (req, res) => {
       message: "Server error while fetching agreement",
       error: error.message,
     });
+  }
+};
+
+// ─── 14. Download Official Agreement Document (Exact Web Vector PDF) ───
+exports.downloadApplicationAgreement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const application = await LoanApplication.findById(id).populate("lenderId borrowerId");
+
+    if (!application) {
+      return res.status(404).send("Agreement not found.");
+    }
+
+    if (req.query.format === "html") {
+      const html = generateAgreementHtml(application);
+      const docId = application.agreement?.documentId || `AGR-${String(application._id).slice(-5).toUpperCase()}`;
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      res.setHeader("Content-Disposition", `inline; filename="Master_Loan_Agreement_${docId}.html"`);
+      return res.send(html);
+    }
+
+    const { pdfBuffer, fileName } = generateAgreementPdf(application);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`);
+    res.setHeader("Content-Length", pdfBuffer.length);
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    return res.end(pdfBuffer);
+  } catch (error) {
+    console.error("Error generating printable agreement:", error);
+    return res.status(500).send("Server error generating agreement document.");
   }
 };
 
