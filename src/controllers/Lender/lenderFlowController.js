@@ -126,7 +126,7 @@ exports.getBorrowerDetails = async (req, res) => {
     const { id } = req.params;
 
     const borrower = await User.findOne({ _id: id, roleId: 2 }).select(
-      "userName email mobileNo address panCardNumber aadharCardNo companyName borrowerProfile digilockerKyc createdAt"
+      "userName email mobileNo address panCardNumber aadharCardNo companyName borrowerProfile digilockerKyc profileImage createdAt"
     );
 
     if (!borrower) {
@@ -983,7 +983,7 @@ exports.getLenderProfile = async (req, res) => {
   try {
     const lenderId = req.user.id || req.user._id;
     const lender = await User.findById(lenderId).select(
-      "userName email mobileNo address city taluka district state pincode panCardNumber companyName licenseNumber stateOfOperation lenderProfile createdAt"
+      "userName email mobileNo address city taluka district state pincode panCardNumber companyName licenseNumber stateOfOperation lenderProfile profileImage createdAt"
     );
 
     return res.status(200).json({

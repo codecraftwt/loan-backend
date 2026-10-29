@@ -771,7 +771,7 @@ const calculateBorrowerProfileCompletion = (user) => {
 exports.getBorrowerProfile = async (req, res) => {
   try {
     const borrower = await User.findById(req.user._id).select(
-      "userName email mobileNo altMobileNo address city taluka district state pincode stateOfOperation panCardNumber aadharCardNo companyName borrowerProfile digilockerKyc createdAt"
+      "userName email mobileNo altMobileNo address city taluka district state pincode stateOfOperation panCardNumber aadharCardNo companyName borrowerProfile digilockerKyc profileImage createdAt"
     );
 
     if (!borrower) {
@@ -837,6 +837,7 @@ exports.updateBorrowerProfile = async (req, res) => {
     if (panCardNumber !== undefined) user.panCardNumber = panCardNumber;
     if (aadharCardNo !== undefined) user.aadharCardNo = aadharCardNo;
     if (companyName !== undefined) user.companyName = companyName;
+    if (req.body.profileImage !== undefined) user.profileImage = req.body.profileImage;
 
     let newCreditScore =
       creditScore !== undefined
