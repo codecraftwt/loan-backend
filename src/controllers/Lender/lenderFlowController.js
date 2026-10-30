@@ -7,7 +7,7 @@ const {
   allocatePaymentToLoan,
 } = require("../../utils/repaymentEngine");
 const { expireOldPendingApplications } = require("../Borrower/borrowerFlowController");
-const { buildAgreementDocument } = require("../../services/agreementService");
+const { buildAgreementDocument, generateAgreementPdf } = require("../../services/agreementService");
 const { sendPushToUser } = require("../../services/notificationService");
 
 // ─── 1. Get Connected Borrowers (ONLY borrowers whose loan requests were accepted by this particular lender) ───
@@ -79,7 +79,7 @@ exports.getAvailableBorrowers = async (req, res) => {
 
     const rawBorrowers = await User.find(query)
       .select(
-        "userName email mobileNo address panCardNumber companyName borrowerProfile createdAt"
+        "userName email mobileNo address panCardNumber aadharCardNo companyName borrowerProfile profileImage createdAt"
       )
       .sort({ "borrowerProfile.creditScore": -1, createdAt: -1 });
 
@@ -146,37 +146,57 @@ exports.getBorrowerDetails = async (req, res) => {
       .sort({ createdAt: -1 })
       .lean();
 
-    const totalLoansCount = loans.length;
-    const totalLoanAmount = loans.reduce((s, l) => s + (Number(l.amount) || 0), 0);
-    const totalPaidAmount = loans.reduce((s, l) => s + (Number(l.totalPaid) || 0), 0);
-    const totalRemainingAmount = loans.reduce((s, l) => s + (Number(l.remainingAmount) || 0), 0);
-    const hasActiveLoan = loans.some((l) => l.paymentStatus === "pending" || l.paymentStatus === "part paid");
-    const hasOverdueLoan = loans.some((l) => l.paymentStatus === "overdue");
+    const formattedLoans = loans.map((l) => {
+      let paymentStatus = (l.paymentStatus || "").toLowerCase().trim();
+      const rem = Number(l.remainingAmount);
+      const paid = Number(l.totalPaid);
+      const amt = Number(l.amount);
+
+      if (paymentStatus === "paid" || l.status === "closed" || (rem <= 0 && (paid > 0 || amt > 0))) {
+        paymentStatus = "paid";
+      } else if (paymentStatus === "overdue" || (Array.isArray(l.installments) && l.installments.some((i) => i.status === "overdue"))) {
+        paymentStatus = "overdue";
+      } else if (paymentStatus === "part paid" || paymentStatus === "part_paid" || (paid > 0 && rem > 0)) {
+        paymentStatus = "part paid";
+      } else if (!paymentStatus) {
+        paymentStatus = l.status === "closed" ? "paid" : "pending";
+      }
+
+      const finalRemaining = l.remainingAmount !== undefined ? Number(l.remainingAmount) : Math.max(0, amt - paid);
+
+      return {
+        _id: l._id,
+        loanId: l._id,
+        amount: Number(l.amount) || 0,
+        totalPaid: Number(l.totalPaid) || 0,
+        remainingAmount: finalRemaining,
+        remainigAmount: finalRemaining,
+        paymentStatus,
+        status: paymentStatus === "paid" ? "closed" : (l.status || "active"),
+        loanGivenDate: l.loanGivenDate || l.createdAt,
+        loanEndDate: l.loanEndDate,
+        purpose: l.purpose || l.dealName || "Commercial Loan",
+        dealName: l.dealName || l.purpose || "Commercial Loan",
+        lenderName: l.lenderId?.companyName || l.lenderId?.userName || "Institutional Lender",
+        lenderEmail: l.lenderId?.email,
+        interestRate: l.interestRate,
+        tenureMonths: l.tenureMonths,
+        monthlyEmi: l.monthlyEmi,
+      };
+    });
+
+    const totalLoansCount = formattedLoans.length;
+    const totalLoanAmount = formattedLoans.reduce((s, l) => s + (Number(l.amount) || 0), 0);
+    const totalPaidAmount = formattedLoans.reduce((s, l) => s + (Number(l.totalPaid) || 0), 0);
+    const totalRemainingAmount = formattedLoans.reduce((s, l) => s + (Number(l.remainingAmount) || 0), 0);
+    const hasActiveLoan = formattedLoans.some((l) => l.paymentStatus === "pending" || l.paymentStatus === "part paid");
+    const hasOverdueLoan = formattedLoans.some((l) => l.paymentStatus === "overdue");
 
     // Get applications this borrower sent to this specific lender
     const historyWithLender = await LoanApplication.find({
       borrowerId: id,
       lenderId: req.user._id,
     }).sort({ createdAt: -1 });
-
-    const formattedLoans = loans.map((l) => ({
-      _id: l._id,
-      loanId: l._id,
-      amount: l.amount,
-      totalPaid: l.totalPaid,
-      remainingAmount: l.remainingAmount,
-      remainigAmount: l.remainingAmount,
-      paymentStatus: l.paymentStatus,
-      loanGivenDate: l.loanGivenDate || l.createdAt,
-      loanEndDate: l.loanEndDate,
-      purpose: l.purpose || l.dealName || "Commercial Loan",
-      dealName: l.dealName || l.purpose || "Commercial Loan",
-      lenderName: l.lenderId?.companyName || l.lenderId?.userName || "Institutional Lender",
-      lenderEmail: l.lenderId?.email,
-      interestRate: l.interestRate,
-      tenureMonths: l.tenureMonths,
-      monthlyEmi: l.monthlyEmi,
-    }));
 
     return res.status(200).json({
       success: true,
@@ -1494,3 +1514,40 @@ exports.markLenderNotificationRead = async (req, res) => {
     });
   }
 };
+
+// ─── 13. Download Official Loan Agreement (Genuine Vector PDF) ───
+exports.downloadLoanAgreement = async (req, res) => {
+  try {
+    const { id } = req.params;
+    let loan = await Loan.findById(id).populate("lenderId borrowerId applicationId");
+    let application = loan?.applicationId;
+    if (!application) {
+      application = await LoanApplication.findById(id).populate("lenderId borrowerId");
+    }
+
+    if (!application && !loan) {
+      return res.status(404).send("Agreement document not found.");
+    }
+
+    if (application && (!application.lenderId || !application.borrowerId) && loan) {
+      if (!application.lenderId) application.lenderId = loan.lenderId;
+      if (!application.borrowerId) application.borrowerId = loan.borrowerId;
+    }
+
+    const { pdfBuffer, fileName } = generateAgreementPdf(application || loan);
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${fileName}"; filename*=UTF-8''${encodeURIComponent(fileName)}`
+    );
+    res.setHeader("Content-Length", pdfBuffer.length);
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    return res.end(pdfBuffer);
+  } catch (error) {
+    console.error("Error generating loan agreement PDF:", error);
+    return res.status(500).send("Server error generating agreement document.");
+  }
+};
+

@@ -19,6 +19,7 @@ const {
   verifyLoanDisbursalOtp,
   getLenderNotifications,
   markLenderNotificationRead,
+  downloadLoanAgreement,
 } = require("../../controllers/Lender/lenderFlowController");
 
 // Available borrowers directory for lenders
@@ -44,6 +45,7 @@ router.post("/loans/:id/resend-disbursal-otp", authenticateUser, initiateLoanDis
 // Active Loan Portfolio & Repayment Ledger
 router.get("/loans", authenticateUser, getLenderLoansPortfolio);
 router.get("/loans/:id", authenticateUser, getLenderLoanById);
+router.get("/loans/:id/agreement/download", downloadLoanAgreement);
 router.post("/loans/:id/record-payment", authenticateUser, recordLoanPayment);
 router.post("/loans/:id/recalculate", authenticateUser, recalculateLoanSchedule);
 
